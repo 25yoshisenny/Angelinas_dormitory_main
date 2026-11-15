@@ -25,7 +25,7 @@ async function main(){
   if(!tab)throw new Error('Headless Edge did not become ready.');
   socket=new WebSocket(tab.webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
   socket.onmessage=event=>{const data=JSON.parse(event.data);if(data.id){const p=pending.get(data.id);pending.delete(data.id);if(data.error)p?.reject(new Error(data.error.message));else p?.resolve(data.result);}if(data.method==='Runtime.exceptionThrown')errors.push(data.params.exceptionDetails.exception?.description||JSON.stringify(data.params.exceptionDetails));};
-  await send('Page.enable');await send('Runtime.enable');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1050,deviceScaleFactor:1,mobile:false});
+  await send('Page.enable');await send('Runtime.enable');await send('Network.clearBrowserCookies');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1050,deviceScaleFactor:1,mobile:false});
   await navigate('');await waitFor("document.querySelector('.site-hero')!==null");await waitFor("document.querySelector('.about-dorm-image')?.complete && document.querySelector('.about-dorm-image').naturalWidth>0");
   if(!(await evaluate("getComputedStyle(document.querySelector('.sidebar')||document.body).fontFamily.includes('Inter')")))throw new Error('Expected the unified Inter font.');
   await screenshot('landing-desktop');
@@ -53,13 +53,14 @@ async function main(){
 
   if((await evaluate("document.querySelectorAll('.sidebar nav a').length"))!==12)throw new Error('Admin navigation should contain twelve sections.');
   if((await evaluate("document.querySelectorAll('.admin-kpis .stat').length"))!==8)throw new Error('Admin overview should show eight KPIs.');
-  await navigate('index.php?page=billing');await waitFor("document.getElementById('statement-total')?.textContent.includes('11,100')");
+  await navigate('index.php?page=billing');await waitFor("document.getElementById('statement-total')?.textContent.includes('12,170')");
+  if(!(await evaluate("document.querySelector('[name=electricity]').readOnly && document.querySelector('[name=water]').readOnly && document.querySelector('[name=electricity]').value==='850.00' && document.querySelector('[name=water]').value==='220.00'")))throw new Error('Expected read-only automatic room utility shares.');
   const before=await evaluate("document.getElementById('statement-total').textContent");
-  await evaluate("const el=document.querySelector('[name=electricity]');el.value='123.45';el.dispatchEvent(new Event('input',{bubbles:true}));true");
+  await evaluate("const el=document.querySelector('[name=discount]');el.value='123.45';el.dispatchEvent(new Event('input',{bubbles:true}));true");
   const after=await evaluate("document.getElementById('statement-total').textContent");if(before===after)throw new Error('Bill calculator did not respond.');
   await screenshot('billing-desktop');
   await navigate('index.php?page=batch');await waitFor("document.getElementById('batch-grand-total')?.textContent!=='—'");
-  const total=await evaluate("document.getElementById('batch-grand-total').textContent");if(!total.includes('11,100'))throw new Error('Unexpected batch estimate: '+total);
+  await evaluate("const p=document.querySelector('[name=period]');const d=new Date();d.setMonth(d.getMonth()+1);p.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');p.dispatchEvent(new Event('change',{bubbles:true}));true");await waitFor("document.querySelector('[data-utility-note]').textContent.includes('Snapshot date:')");const total=await evaluate("document.getElementById('batch-grand-total').textContent");if(!total.includes('12,170'))throw new Error('Unexpected batch estimate: '+total);
   await evaluate("document.getElementById('select-all').click();true");if(!(await evaluate("document.getElementById('batch-grand-total').textContent.includes('0.00')")))throw new Error('Batch selection did not recalculate.');
   await screenshot('batch-desktop');
   await navigate('index.php?page=reports');if((await evaluate("document.querySelectorAll('.report-chart').length"))!==5)throw new Error('Expected five financial report charts.');await screenshot('reports-desktop');
@@ -130,6 +131,17 @@ async function main(){
   await navigate('index.php?page=receipt&id=1');await screenshot('receipt-desktop');pdf=await send('Page.printToPDF',{printBackground:true,preferCSSPageSize:true});fs.writeFileSync(path.join(directory,'sample-receipt.pdf'),Buffer.from(pdf.data,'base64'));
   await navigate('index.php?page=reports');await screenshot('reports-desktop');
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await navigate('index.php?page=reports');if(await evaluate('document.documentElement.scrollWidth>window.innerWidth'))throw new Error('Report charts overflow the mobile viewport.');await screenshot('reports-mobile');
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  await navigate('index.php?page=departure');
+  if(!(await evaluate("document.querySelector('[name=rent_policy]')!==null")))throw new Error('Departure preparation form missing.');
+  await evaluate("document.querySelector('input[value=preview_departure]').closest('form').requestSubmit();true");
+  await waitFor("document.querySelector('input[value=confirm_departure]')!==null");
+  await screenshot('departure-desktop');
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await navigate('index.php?page=departure');
+  if(await evaluate('document.documentElement.scrollWidth>window.innerWidth'))throw new Error('Departure review overflows mobile viewport.');
+  await screenshot('departure-mobile');
+  await navigate('index.php?page=rooms');await evaluate("document.querySelector('.room-card details').open=true;true");if(await evaluate('document.documentElement.scrollWidth>window.innerWidth'))throw new Error('Room utility settings overflow mobile.');await screenshot('room-utilities-mobile');
   if(errors.length)throw new Error('Browser exceptions: '+errors.join(', '));
   console.log('PASS: desktop/mobile rendering, tenant dashboard and payment guide, submission and approval flow, amount limits, bill calculator, responsive navigation, and no JavaScript exceptions. Screenshots: storage/previews/.');
  }finally{

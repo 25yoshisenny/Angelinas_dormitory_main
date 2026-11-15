@@ -34,6 +34,8 @@ if(in_array('--migrate-sqlite',$argv,true) && is_file($legacy)) {
 }
 $defaults=['seeded'=>'1','business_name'=>"Angelina’s Dormitory",'business_contact'=>'','business_address'=>'','cutoff_day'=>'15','due_day'=>'28','gcash_name'=>'Angelina','gcash_number'=>'','payment_instructions'=>'','office_hours'=>''];
 foreach($defaults as $key=>$value) $db->prepare('INSERT INTO settings(`key`,value) VALUES(?,?) ON DUPLICATE KEY UPDATE `key`=VALUES(`key`)')->execute([$key,$value]);
+require __DIR__.'/fixed_utilities.php';
+migrate_fixed_utilities($db,$cfg['database']);
 // Bootstrap and seed only after all schema and migration steps finish.
 require dirname(__DIR__).'/app/bootstrap.php'; require dirname(__DIR__).'/app/seed.php';
 echo 'MySQL database ready: '.$cfg['database'].PHP_EOL;

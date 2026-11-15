@@ -26,9 +26,38 @@ if(rentData){const form=rentData.closest('form'),rents=JSON.parse(rentData.value
 const preview=document.getElementById('statement-preview');
 if(preview){const form=preview.closest('form'),balances=JSON.parse(document.getElementById('tenant-balances').value),defaults=JSON.parse(document.getElementById('billing-defaults').value);const amount=name=>Math.round((Number(form.elements.namedItem(name)?.value)||0)*100);const update=()=>{const charges=amount('rent')+amount('electricity')+amount('water'),previous=balances[form.elements.namedItem('tenant_id').value]||0,discount=amount('discount'),adjustment=amount('adjustment');document.getElementById('statement-total').textContent=peso(charges+previous-discount+adjustment);document.getElementById('preview-charges').textContent='Current charges '+peso(charges);document.getElementById('preview-previous').textContent='Previous balance '+peso(previous);document.getElementById('preview-discount').textContent='Discount '+peso(discount)+' · Adjustment '+peso(adjustment);};const dates=()=>{const period=form.elements.namedItem('period').value;if(!/^\d{4}-\d{2}$/.test(period))return;const [year,month]=period.split('-').map(Number),last=new Date(year,month,0).getDate();form.elements.namedItem('cutoff').value=period+'-'+String(Math.min(defaults.cutoff,last)).padStart(2,'0');form.elements.namedItem('due_date').value=period+'-'+String(Math.min(defaults.due,last)).padStart(2,'0');};form.addEventListener('input',update);form.addEventListener('change',update);form.elements.namedItem('period').addEventListener('change',dates);dates();update();}
 const batch=document.querySelector('form:has([data-batch-row])');
+// Read-only estimates use the same server allocation as saving a statement.
+document.querySelectorAll('form:has([data-utility-note])').forEach(form=>{
+ const period=form.elements.namedItem('period');if(!period)return;
+ const note=form.querySelector('[data-utility-note]'),policy=note.textContent;let generation=0,ready=false;
+ const refresh=async()=>{
+  const version=++generation;ready=false;note.textContent='Loading fixed utility shares...';
+  try{
+   const response=await fetch('?utility_preview=1&period='+encodeURIComponent(period.value),{cache:'no-store'});
+   const data=await response.json();if(version!==generation)return;if(!response.ok)throw new Error(data.error||'Unable to load utility allocation.');
+   if(form===batch){
+    form.querySelectorAll('[data-batch-row]').forEach(row=>{
+     const box=row.querySelector('[name="selected[]"]'),share=data.shares[box.value];
+     for(const type of ['electricity','water'])row.querySelector(`[name="${type}[${box.value}]"]`).value=((share?.[type]||0)/100).toFixed(2);
+     box.disabled=!share||share.skip;row.dataset.skip=box.disabled?'1':'0';
+     row.title=box.disabled?'Existing or later statement: skipped':share.note;
+    });note.textContent=policy+' Snapshot date: '+data.as_of+'.';
+   }else{
+    const share=data.shares[form.elements.namedItem('tenant_id').value];
+    if(!share)throw new Error('Select an assigned tenant.');
+    for(const type of ['electricity','water'])form.elements.namedItem(type).value=(share[type]/100).toFixed(2);
+    note.textContent=share.note+' Snapshot date: '+data.as_of+'. '+policy;
+   }
+   ready=true;form.dispatchEvent(new Event('input',{bubbles:true}));
+  }catch(error){if(version===generation)note.textContent='Utilities unavailable: '+error.message+' Reload before creating bills.';}
+ };
+ period.addEventListener('change',refresh);form.elements.namedItem('tenant_id')?.addEventListener('change',refresh);
+ form.addEventListener('submit',event=>{if(!ready){event.preventDefault();note.textContent='Wait for the utility estimate, or reload if it could not be loaded.';}});
+ refresh();
+});
 const latestData=document.getElementById('tenant-latest-periods');
 if(latestData){const form=latestData.closest('form'),latest=JSON.parse(latestData.value),initialPeriod=form.elements.namedItem('period').value;const suggest=()=>{const last=latest[form.elements.namedItem('tenant_id').value];let period=initialPeriod;if(last&&last>=period){const [y,m]=last.split('-').map(Number);period=(m===12?y+1:y)+'-'+String(m===12?1:m+1).padStart(2,'0');}form.elements.namedItem('period').value=period;form.elements.namedItem('period').dispatchEvent(new Event('change',{bubbles:true}));};form.elements.namedItem('tenant_id').addEventListener('change',suggest);suggest();}
-if(batch){const update=()=>{let total=0;batch.querySelectorAll('[data-batch-row]').forEach(row=>{let sum=Number(row.dataset.rent)+Number(row.dataset.previous);row.querySelectorAll('input[type="number"]').forEach(input=>sum+=Math.round((Number(input.value)||0)*100));row.querySelector('[data-batch-total]').textContent=peso(sum);if(row.querySelector('input[type="checkbox"]').checked)total+=sum;});document.getElementById('batch-grand-total').textContent=peso(total);};const all=document.getElementById('select-all');all.addEventListener('change',()=>{batch.querySelectorAll('[name="selected[]"]').forEach(box=>box.checked=all.checked);update();});batch.addEventListener('input',update);batch.addEventListener('change',update);update();}
+if(batch){const update=()=>{let total=0;batch.querySelectorAll('[data-batch-row]').forEach(row=>{let sum=Number(row.dataset.rent)+Number(row.dataset.previous);row.querySelectorAll('input[type="number"]').forEach(input=>sum+=Math.round((Number(input.value)||0)*100));row.querySelector('[data-batch-total]').textContent=peso(sum);if(row.dataset.skip==='1')row.querySelector('[data-batch-total]').textContent='Skipped';else if(row.querySelector('input[type="checkbox"]').checked)total+=sum;});document.getElementById('batch-grand-total').textContent=peso(total);};const all=document.getElementById('select-all');all.addEventListener('change',()=>{batch.querySelectorAll('[name="selected[]"]').forEach(box=>{if(!box.disabled)box.checked=all.checked;});update();});batch.addEventListener('input',update);batch.addEventListener('change',update);update();}
 document.querySelectorAll('form').forEach(form=>form.addEventListener('submit',()=>{const button=form.querySelector('button');if(button){button.disabled=true;setTimeout(()=>button.disabled=false,5000);}}));
 document.querySelectorAll('form').forEach(form=>{
  const password=form.querySelector('[name="temporary_password"]'),confirmation=form.querySelector('[name="confirm_password"]');

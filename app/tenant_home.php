@@ -1,11 +1,11 @@
 <?php
 function tenant_current_room(array $u): ?array {
-    return one('SELECT r.number,r.rent,r.capacity,r.status,bs.label,a.start_date FROM tenant_assignments a JOIN bed_spaces bs ON bs.id=a.bed_id JOIN rooms r ON r.id=bs.room_id WHERE a.tenant_id=? AND a.end_date IS NULL',[$u['tenant_id']]);
+    return one('SELECT r.number,r.rent,r.capacity,r.status,r.fixed_electricity,r.fixed_water,bs.label,a.start_date FROM tenant_assignments a JOIN bed_spaces bs ON bs.id=a.bed_id JOIN rooms r ON r.id=bs.room_id WHERE a.tenant_id=? AND a.end_date IS NULL',[$u['tenant_id']]);
 }
 function tenant_room_type(array $room): string { return (int)$room['capacity']===1?'Single (1 bed)':'Shared ('.$room['capacity'].' beds)'; }
 function tenant_room_card(?array $room,bool $full=false): void {
     echo '<section class="panel home-room-card"'.($full?' id="room-details"':'').'><span class="eyebrow">MY ROOM</span><h2>'.($room?'Room '.e($room['number']):'Room not assigned').'</h2>';
-    if($room){echo '<dl class="room-facts">';foreach(['Room'=>$room['number'],'Bed'=>$room['label'],'Room Type'=>tenant_room_type($room),'Monthly Rent'=>money($room['rent']),'Move-in date'=>date('F j, Y',strtotime($room['start_date'])),'Status'=>ucfirst($room['status'])] as $label=>$value)echo '<div><dt>'.e($label).'</dt><dd>'.e($value).'</dd></div>';echo '</dl>';if($full)echo '<p class="muted">Room type reflects the number of configured bed spaces. Monthly statements retain the rent and room recorded for that billing period.</p>';else echo '<a class="button" href="?page=profile#room-details">View Room Details &rarr;</a>';}
+    if($room){echo '<dl class="room-facts">';foreach(['Room'=>$room['number'],'Bed'=>$room['label'],'Room Type'=>tenant_room_type($room),'Monthly Rent'=>money($room['rent']),'Room electricity total'=>money($room['fixed_electricity']),'Room water total'=>money($room['fixed_water']),'Move-in date'=>date('F j, Y',strtotime($room['start_date'])),'Status'=>ucfirst($room['status'])] as $label=>$value)echo '<div><dt>'.e($label).'</dt><dd>'.e($value).'</dd></div>';echo '</dl>';if($full)echo '<p class="muted">Room type reflects the number of configured bed spaces. Room utilities are whole-room estimates, shared among the monthly snapshot occupants. Your statement shows your allocated share. Issued charges remain unchanged when rates change.</p>';else echo '<a class="button" href="?page=profile#room-details">View Room Details &rarr;</a>';}
     else echo '<p>'.($full?'Your current room information will appear after assignment.':'Admin will confirm your room and bed.').'</p><a class="button" href="?page=support">Ask about room assignment</a>';
     echo '</section>';
 }

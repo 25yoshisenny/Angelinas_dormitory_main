@@ -9,3 +9,10 @@ body,.commercial-site,.auth-page,.public-entry{font-family:Inter,Arial,sans-seri
 @media(max-width:520px){.site-hero{padding-top:36px;padding-bottom:43px}.hero-copy h1{font-size:40px;letter-spacing:-1.7px}.hero-copy>p{font-size:12px}.hero-preview{padding:9px}.hero-copy .site-eyebrow{font-size:8px}.site-hero-background{background-image:linear-gradient(rgba(17,48,30,.88),rgba(22,54,32,.76)),url('dorm-courtyard.png')}.concept-image-label{bottom:8px;right:20px;font-size:7px}.about-preview{margin:0;max-width:390px;padding-bottom:80px}.about-preview-inset{width:75%;right:0}.about-dorm-image{height:245px}.preview-disclaimer{font-size:8px}.auth-card{padding:25px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media print{body,.auth-page{background:#fff!important}.welcome-banner{background:#fff!important}.business-document,.business-document *{font-family:Inter,Arial,sans-serif}.preview-disclaimer{color:#444}}
+
+/* Keyboard access and comfortable touch targets across the workspace. */
+.skip-link{position:fixed;top:-100px;left:16px;z-index:9999;padding:12px 20px;background:#173f35;color:#fff;border-radius:8px}.skip-link:focus{top:12px}
+:focus-visible{outline:3px solid #46816b;outline-offset:3px}
+@media(max-width:700px){.section-tabs{flex-wrap:wrap}.section-tabs a{min-height:44px;display:inline-flex;align-items:center}.form-actions button{width:100%}}
+
+.page-heading .workspace-back{display:block;width:fit-content;margin-bottom:12px}

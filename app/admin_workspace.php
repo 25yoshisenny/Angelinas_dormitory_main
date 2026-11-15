@@ -4,7 +4,8 @@ function admin_section_tabs(string $page,array $u): void {
     $tabs=match($page) {
         'reports','expenses','ledger'=>['reports'=>'Analytics','expenses'=>'Expenses','ledger'=>'Account Ledger'],
         'settings','notifications'=>['settings'=>'Dormitory & Billing','notifications'=>'Email / Notifications'],
-        'billing','batch'=>['billing'=>'Statements','batch'=>'Create Monthly Billing'],
+        'billing','batch','departure'=>['billing'=>'Statements','batch'=>'Create Monthly Billing','departure'=>'Final Bill & Departure'],
+        'rooms','occupancy'=>['rooms'=>'Rooms & Beds','occupancy'=>'Occupancy Checks'],
         default=>[]
     };
     if(!$tabs) return;
@@ -46,7 +47,7 @@ function admin_dashboard(array $u): void {
 function workspace_back_link(string $page,array $u): void {
     if(in_array($page,['dashboard','statement','receipt'],true))return;
     [$target,$label]=match($page){
-        'batch'=>['billing','Billing Statements'],
+        'batch','departure'=>['billing','Billing Statements'],
         'expenses','ledger'=>['reports','Financial Reports'],
         'notifications'=>['settings','Settings'],
         'pay'=>['billing','My bills'],

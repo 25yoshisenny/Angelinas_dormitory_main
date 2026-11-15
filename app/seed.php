@@ -5,8 +5,8 @@ function seed(): void {
     try {
         query('INSERT INTO users(username,password_hash,role,name) VALUES(?,?,?,?)',['admin',password_hash('Admin@12345',PASSWORD_DEFAULT),'admin','Angelina • Administrator']);
         query('INSERT INTO users(username,password_hash,role,name) VALUES(?,?,?,?)',['staff',password_hash('Staff@12345',PASSWORD_DEFAULT),'staff','Payment Staff']);
-        foreach ([['101',4,450000],['102',6,500000],['103',4,500000],['104',2,550000]] as $r) {
-            query('INSERT INTO rooms(number,capacity,rent) VALUES(?,?,?)',$r); $id=(int)db()->lastInsertId();
+        foreach ([['101',4,450000,65000,18000],['102',6,500000,85000,22000],['103',4,500000,110000,28000],['104',2,550000,75000,20000]] as $r) {
+            query('INSERT INTO rooms(number,capacity,rent,fixed_electricity,fixed_water) VALUES(?,?,?,?,?)',$r); $id=(int)db()->lastInsertId();
             for($i=1;$i<=$r[1];$i++) query('INSERT INTO bed_spaces(room_id,label) VALUES(?,?)',[$id,'Bed '.$i]);
         }
         query('INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)',['Maria Santos (Demo)','maria@example.com','0917 000 0000',date('Y-m-01')]); $tid=(int)db()->lastInsertId();

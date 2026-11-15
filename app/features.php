@@ -9,7 +9,7 @@ function parse_amount($value): int {
     if(!preg_match('/^\d{1,8}(\.\d{1,2})?$/',$value)) throw new RuntimeException('Use positive amounts with at most two decimal places.');
     return (int)round((float)$value*100);
 }
-function create_statement(int $tenant,string $period,string $cutoff,string $due,int $rent,int $electricity,int $water,int $discount=0,int $adjustment=0,string $discountReason='',string $adjustmentReason=''): int {
+function create_statement(int $tenant,string $period,string $cutoff,string $due,int $rent,int $discount=0,int $adjustment=0,string $discountReason='',string $adjustmentReason=''): int {
     $u=require_role(['admin']);
     $a=one('SELECT * FROM tenant_assignments WHERE tenant_id=? AND end_date IS NULL',[$tenant]);
     if(!$a) throw new RuntimeException('Only actively assigned tenants can receive new monthly bills.');
@@ -18,6 +18,7 @@ function create_statement(int $tenant,string $period,string $cutoff,string $due,
     if($period<substr($a['start_date'],0,7)) throw new RuntimeException('Billing period cannot be before this stay began.');
     $latest=one('SELECT period FROM billing WHERE tenant_id=? ORDER BY period DESC LIMIT 1',[$tenant]);
     if($latest && $period<=$latest['period']) throw new RuntimeException('Use a new billing period after the latest existing period.');
+    $share=utility_share($tenant,$period,true);$electricity=$share['electricity'];$water=$share['water'];
     $old=rows('SELECT b.*,COALESCE((SELECT SUM(amount) FROM payments WHERE billing_id=b.id AND voided_at IS NULL),0) paid FROM billing b WHERE tenant_id=? AND carried_to IS NULL',[$tenant]);
     $prev=array_sum(array_map('balance',$old)); $total=$rent+$electricity+$water+$prev-$discount+$adjustment;
     if($total<0) throw new RuntimeException('Discounts cannot exceed charges and previous balance.');
@@ -32,6 +33,7 @@ function create_statement(int $tenant,string $period,string $cutoff,string $due,
     audit('Created billing statement','billing',$id,'Previous balance '.money($prev)); return $id;
 }
 function feature_action(string $action,array $u): bool {
+    if(departure_action($action)) return true;
     switch($action) {
     case 'batch_billing':
         require_role(['admin']); $period=period_input(); $cutoff=date_input('cutoff'); $due=date_input('due_date');
@@ -43,7 +45,7 @@ function feature_action(string $action,array $u): bool {
             if(!$a) throw new RuntimeException('A selected tenant is no longer active. Reload the batch.');
             $last=one('SELECT period FROM billing WHERE tenant_id=? ORDER BY period DESC LIMIT 1',[$tenant]);
             if($last && $last['period']>=$period) { $skipped++; continue; }
-            create_statement($tenant,$period,$cutoff,$due,(int)$a['rent'],parse_amount($_POST['electricity'][$tenant]??0),parse_amount($_POST['water'][$tenant]??0)); $count++;
+            create_statement($tenant,$period,$cutoff,$due,(int)$a['rent']); $count++;
         }
         audit('Generated monthly billing batch','billing',null,"$count created; $skipped skipped (existing/newer statements).");
         $_SESSION['action_message']="$count statements created. $skipped skipped because they already have this or a later billing period."; return true;

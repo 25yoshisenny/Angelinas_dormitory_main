@@ -131,7 +131,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         y,m = map(int,current.split('-')); nxt = f'{y+1 if m==12 else y:04d}-{1 if m==12 else m+1:02d}'
         admin.post('bill','billing',tenant_id=1,period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',rent='5000',electricity='800',water='300',discount='200',discount_reason='Scholarship',adjustment='500',adjustment_reason='Additional dorm charge')
         latest = con.execute('SELECT id,previous_balance,total_due FROM billing ORDER BY id DESC LIMIT 1').fetchone()
-        assert latest == (2,110000,750000), latest
+        assert latest == (2,110000,747000), latest
         assert con.execute('SELECT carried_to FROM billing WHERE id=1').fetchone()[0] == 2
         html = admin.post('payment','payments',billing_id=1,payer='Parent',amount='100',method='Personal Payment',payment_date=today,reference='',idempotency_key='old-bill')
         assert 'no greater' in html
@@ -139,8 +139,8 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         admin.post('payment','payments',billing_id=2,payer='Parent',amount='2000',method='Personal Payment',payment_date=today,reference='',idempotency_key='third-payment')
         assert con.execute('SELECT SUM(amount) FROM payments WHERE billing_id=2').fetchone()[0] == 500000
         admin.post('adjust_bill','billing',billing_id=2,type='discount',amount='300',reason='Courtesy discount')
-        assert con.execute('SELECT total_due FROM billing WHERE id=2').fetchone()[0] == 720000
-        admin.post('payment','payments',billing_id=2,payer='Parent',amount='2200',method='Personal Payment',payment_date=today,reference='',idempotency_key='final-payment')
+        assert con.execute('SELECT total_due FROM billing WHERE id=2').fetchone()[0] == 717000
+        admin.post('payment','payments',billing_id=2,payer='Parent',amount='2170',method='Personal Payment',payment_date=today,reference='',idempotency_key='final-payment')
         assert 'Paid' in admin.get('index.php?page=statement&id=2')[1]
         html=admin.post('adjust_bill','billing',billing_id=2,type='discount',amount='1',reason='Invalid below paid')
         assert 'less than payments' in html
@@ -151,7 +151,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert tenant.get('index.php?page=accounts')[0]==403
         assert tenant.get('index.php?page=receipt&id=1')[0]==200
         paid_home=tenant.get('index.php?page=dashboard')[1]
-        assert '<h2>\u20b17,200.00</h2>' in paid_home
+        assert '<h2>\u20b17,170.00</h2>' in paid_home
         assert 'Your account is settled' in paid_home
         assert 'View Bill Details' in paid_home and 'Pay Now' not in paid_home
         assert 'id="room-details"' in tenant.get('index.php?page=profile')[1]
@@ -211,7 +211,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         html=admin.post('batch_billing','batch',period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',**{'selected[]':2,'electricity[2]':'125.50','water[2]':'80'})
         assert '1 statements created' in html
         newbill=con.execute('SELECT previous_balance,total_due,electricity,water FROM billing WHERE tenant_id=2 AND period=?',[nxt]).fetchone()
-        assert newbill==(400000,920550,12550,8000),newbill
+        assert newbill==(400000,900000,0,0),newbill
         html=admin.post('batch_billing','batch',period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',**{'selected[]':2,'electricity[2]':'125.50','water[2]':'80'})
         assert '0 statements created. 1 skipped' in html
         assert 'carried forward' in admin.post('void_payment','payments',payment_id=6,reason='Cannot change a carried bill')
@@ -294,7 +294,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
             assert con.execute("SELECT COUNT(*) FROM notifications WHERE billing_id=? AND dedup_key LIKE 'due-%'",[current_bill]).fetchone()[0]==count
         con.execute('UPDATE billing SET due_date=? WHERE id=?',[original_due,current_bill])
         prepared=other.get('index.php?page=pay')[1]
-        assert 'value="9205.50"' in prepared,prepared[-2500:]
+        assert 'value="9000.00"' in prepared,prepared[-2500:]
         assert 'Paano' not in prepared
         report=admin.get('index.php?page=reports')[1]
         for chart in ['Monthly collections','Payment methods','Current statement status','Outstanding balances by age']:
@@ -338,10 +338,10 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'do not have access' in other.post('review_submission','pay',submission_id=2,decision='approved',verified=1)
         assert 'Payment verified' in staff.post('review_submission','payments',submission_id=2,decision='approved',verified=1,review_note='Funds verified in test account.')
         pid=con.execute('SELECT payment_id FROM payment_submissions WHERE id=2').fetchone()[0]
-        assert con.execute('SELECT amount,balance_after,received_by FROM payments WHERE id=?',[pid]).fetchone()==(250000,670550,2)
+        assert con.execute('SELECT amount,balance_after,received_by FROM payments WHERE id=?',[pid]).fetchone()==(250000,650000,2)
         for viewer in [admin,staff,other]:
             assert 'TENANT-GCASH-1' in viewer.get('index.php?page=payments')[1]
-            assert '6,705.50' in viewer.get('index.php?page=statement&id='+str(current_bill))[1]
+            assert '6,500.00' in viewer.get('index.php?page=statement&id='+str(current_bill))[1]
         assert 'already reviewed' in staff.post('review_submission','payments',submission_id=2,decision='approved',verified=1)
         assert con.execute('SELECT COUNT(*) FROM payments WHERE billing_id=?',[current_bill]).fetchone()[0]==1
         assert 'Payment confirmation' in other.get('index.php?page=receipt&id='+str(pid))[1]
@@ -398,8 +398,116 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert con.execute('SELECT title,message,active FROM announcements WHERE id=?',[notice_id]).fetchone()==('Updated notice','Corrected information',1)
         admin.post('edit_announcement','announcements',announcement_id=notice_id,title='Updated notice',message='Corrected information',expires_on='',active='0')
         assert 'Updated notice' not in tenant.get('index.php?page=announcements')[1]
+        # Proposal: final billing updates the existing month atomically and frees the bed.
+        assert tenant.get('index.php?page=departure')[0] == 403
+        assert staff.get('index.php?page=departure')[0] == 403
+        today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).date()
+        first = today.replace(day=1).isoformat()
+        room_id = con.execute("SELECT id FROM rooms WHERE status='active' LIMIT 1").fetchone()[0]
+        bed_id = con.execute("SELECT b.id FROM bed_spaces b JOIN rooms r ON r.id=b.room_id WHERE r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id AND a.end_date IS NULL) LIMIT 1").fetchone()[0]
+        con.execute("INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)", ['Departure Test','departure@example.com','09170000001',first])
+        departure_id = con.execute("SELECT id FROM tenants WHERE email='departure@example.com'").fetchone()[0]
+        admin.post('assign_tenant','tenants',tenant_id=departure_id,bed_id=bed_id,move_in=first)
+        admin.post('bill','billing',tenant_id=departure_id,period=today.strftime('%Y-%m'),cutoff=first,due_date=today.isoformat(),rent='3100',water='100',electricity='200')
+        bid = con.execute('SELECT id FROM billing WHERE tenant_id=?',[departure_id]).fetchone()[0]
+        preview = dict(tenant_id=departure_id,move_out=today.isoformat(),rent_policy='daily',water='150',electricity='250')
+        body = admin.post('preview_departure','departure',**preview)
+        assert 'Review departure: Departure Test' in body
+        assert con.execute('SELECT end_date FROM tenant_assignments WHERE tenant_id=?',[departure_id]).fetchone()[0] is None
+        assert con.execute('SELECT rent,water,electricity FROM billing WHERE id=?',[bid]).fetchone() == (310000,0,0)
+        # A payment arriving after preview invalidates confirmation, rather than overwriting it.
+        admin.post('payment','payments',billing_id=bid,amount='10',method='Personal Payment',payer='Departure Test',payment_date=today.isoformat(),idempotency_key=uuid.uuid4().hex)
+        assert 'account changed' in admin.post('confirm_departure','departure')
+        admin.post('preview_departure','departure',**preview)
+        body=admin.post('confirm_departure','departure')
+        assert 'Departure completed' in body
+        import calendar
+        days_in_month=calendar.monthrange(today.year,today.month)[1]
+        expected_rent=(310000*today.day+days_in_month//2)//days_in_month
+        assert con.execute('SELECT rent,water,electricity,total_due FROM billing WHERE id=?',[bid]).fetchone() == (expected_rent,0,0,expected_rent)
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=?',[departure_id]).fetchone()[0] == 1
+        assert str(con.execute('SELECT end_date FROM tenant_assignments WHERE tenant_id=?',[departure_id]).fetchone()[0]) == today.isoformat()
+        assert con.execute('SELECT status FROM tenants WHERE id=?',[departure_id]).fetchone()[0] == 'moved_out'
+        assert 'Prepare a departure preview first' in admin.post('confirm_departure','departure')
+        assert con.execute("SELECT COUNT(*) FROM audit_logs WHERE action='Finalized departure and released bed' AND record_id=?",[bid]).fetchone()[0] == 1
+        # A departure without this month's bill creates one, and missing earlier rent is blocked.
+        con.execute("INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)", ['New Final Bill','new-final@example.com','09170000002',first])
+        fresh_id=con.execute("SELECT id FROM tenants WHERE email='new-final@example.com'").fetchone()[0]
+        admin.post('assign_tenant','tenants',tenant_id=fresh_id,bed_id=bed_id,move_in=first)
+        earlier=(today.replace(day=1)-datetime.timedelta(days=1)).replace(day=1).isoformat()
+        con.execute('UPDATE tenants SET move_in=? WHERE id=?',[earlier,fresh_id])
+        assert 'missing monthly statement' in admin.post('preview_departure','departure',tenant_id=fresh_id,move_out=today.isoformat(),rent_policy='full',water='0',electricity='0')
+        con.execute('UPDATE tenants SET move_in=? WHERE id=?',[first,fresh_id])
+        admin.post('preview_departure','departure',tenant_id=fresh_id,move_out=today.isoformat(),rent_policy='full',water='0',electricity='0')
+        assert 'Departure completed' in admin.post('confirm_departure','departure')
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=?',[fresh_id]).fetchone()[0] == 1
+        assert con.execute('SELECT status FROM tenants WHERE id=?',[fresh_id]).fetchone()[0] == 'moved_out'
+        # Fixed utilities: room rates, allocation, immutable snapshots, and all role boundaries.
+        assert 'at most 72' in admin.post('password','account',current_password='AdminTesting@2026',new_password='A'*73,confirm_password='A'*73)
+        expected_rates=[(65000,18000),(85000,22000),(110000,28000),(75000,20000)]
+        assert con.execute('SELECT fixed_electricity,fixed_water FROM rooms ORDER BY id LIMIT 4').fetchall()==expected_rates
+        for viewer in [staff,tenant,other]:
+            assert viewer.get('index.php?utility_preview=1&period='+nxt)[0]==403
+            assert 'do not have access' in viewer.post('room_update','payments',room_id=1,rent=4500,status='active',fixed_electricity=1,fixed_water=1)
+        assert con.execute('SELECT fixed_electricity,fixed_water FROM rooms WHERE id=1').fetchone()==expected_rates[0]
+        assert 'valid amount' in admin.post('room_update','rooms',room_id=1,rent=4500,status='active',fixed_electricity='-1',fixed_water=180)
+        admin.post('room','rooms',number='UTIL-A',capacity=3,rent=1000,fixed_electricity='850.01',fixed_water='220.01')
+        admin.post('room','rooms',number='UTIL-B',capacity=2,rent=1000,fixed_electricity='750',fixed_water='200')
+        room_a=con.execute("SELECT id FROM rooms WHERE number='UTIL-A'").fetchone()[0]
+        room_b=con.execute("SELECT id FROM rooms WHERE number='UTIL-B'").fetchone()[0]
+        beds_a=[v[0] for v in con.execute('SELECT id FROM bed_spaces WHERE room_id=? ORDER BY id',[room_a]).fetchall()]
+        bed_b=con.execute('SELECT id FROM bed_spaces WHERE room_id=? ORDER BY id',[room_b]).fetchone()[0]
+        people=[]
+        for ix,bed in enumerate(beds_a):
+            email='utility-'+str(ix)+'@example.com'
+            con.execute('INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)',['Utility Resident '+str(ix),email,'09170000000',first])
+            tid=con.execute('SELECT id FROM tenants WHERE email=?',[email]).fetchone()[0];people.append(tid)
+            admin.post('assign_tenant','tenants',tenant_id=tid,bed_id=bed,move_in=first)
+        def month_after(period,count):
+            year,month=map(int,period.split('-'));number=year*12+month-1+count
+            return f'{number//12:04d}-{number%12+1:02d}'
+        utility_month=month_after(nxt,2);future_month=month_after(utility_month,1)
+        before_bills=con.execute('SELECT id,electricity,water,total_due FROM billing ORDER BY id').fetchall()
+        preview=json.loads(admin.get('index.php?utility_preview=1&period='+utility_month)[1])
+        assert [(preview['shares'][str(t)]['electricity'],preview['shares'][str(t)]['water']) for t in people]==[(28334,7334),(28334,7334),(28333,7333)]
+        # Client-supplied utility overrides are ignored, including forged negative inputs.
+        admin.post('bill','billing',tenant_id=people[0],period=utility_month,cutoff=utility_month+'-15',due_date=utility_month+'-28',rent=1000,electricity='99999',water='-1')
+        b1=con.execute('SELECT id FROM billing WHERE tenant_id=?',[people[0]]).fetchone()[0]
+        assert con.execute('SELECT electricity,water,total_due FROM billing WHERE id=?',[b1]).fetchone()==(28334,7334,135668)
+        snapshot=con.execute('SELECT value FROM settings WHERE `key`=?',['utility_snapshot_'+utility_month]).fetchone()[0]
+        admin.post('room_update','rooms',room_id=room_a,rent=1000,status='active',fixed_electricity='999.99',fixed_water='333.33')
+        assert con.execute('SELECT fixed_electricity,fixed_water FROM rooms WHERE id=?',[room_a]).fetchone()==(99999,33333)
+        # A mid-month transfer keeps one share from the original snapshot room.
+        admin.post('transfer','tenants',tenant_id=people[1],bed_id=bed_b,transfer_date=today.isoformat())
+        admin.post('bill','billing',tenant_id=people[1],period=utility_month,cutoff=utility_month+'-15',due_date=utility_month+'-28',rent=1000)
+        admin.post('batch_billing','batch',period=utility_month,cutoff=utility_month+'-15',due_date=utility_month+'-28',**{'selected[]':people[2],'electricity['+str(people[2])+']':'1','water['+str(people[2])+']':'1'})
+        assert con.execute('SELECT SUM(electricity),SUM(water) FROM billing WHERE tenant_id IN (?,?,?) AND period=?',[*people,utility_month]).fetchone()==(85001,22001)
+        assert con.execute('SELECT value FROM settings WHERE `key`=?',['utility_snapshot_'+utility_month]).fetchone()[0]==snapshot
+        assert con.execute('SELECT id,electricity,water,total_due FROM billing WHERE id<? ORDER BY id',[b1]).fetchall()==before_bills
+        # Only confirmed payments affect balances; the next bill carries the exact remainder.
+        staff.post('payment','payments',billing_id=b1,amount=100,method='Personal Payment',payer='Utility Parent',payment_date=today.isoformat(),idempotency_key='utility-partial')
+        receipt_id=con.execute("SELECT id FROM payments WHERE idempotency_key='utility-partial'").fetchone()[0]
+        assert con.execute('SELECT balance_after FROM payments WHERE id=?',[receipt_id]).fetchone()[0]==125668
+        assert '1,256.68' in staff.get('index.php?page=receipt&id='+str(receipt_id))[1]
+        admin.post('bill','billing',tenant_id=people[0],period=future_month,cutoff=future_month+'-15',due_date=future_month+'-28',rent=1000)
+        assert con.execute('SELECT electricity,water,previous_balance,total_due FROM billing WHERE tenant_id=? AND period=?',[people[0],future_month]).fetchone()==(50000,16667,125668,292335)
+        assert con.execute('SELECT electricity,water FROM billing WHERE id=?',[b1]).fetchone()==(28334,7334)
+        # Atomic batch failure must roll back both the first statement and its snapshot.
+        rollback_month=month_after(future_month,1)
+        status,form=admin.get('index.php?page=batch');csrf=re.search(r'name="csrf" value="([^"]+)"',form)[1]
+        payload=[('csrf',csrf),('action','batch_billing'),('return_page','batch'),('period',rollback_month),('cutoff',rollback_month+'-15'),('due_date',rollback_month+'-28'),('selected[]',people[0]),('selected[]',999999)]
+        admin.opener.open(Request(BASE+'index.php',urlencode(payload).encode())).read()
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE period=?',[rollback_month]).fetchone()[0]==0
+        assert con.execute('SELECT COUNT(*) FROM settings WHERE `key`=?',['utility_snapshot_'+rollback_month]).fetchone()[0]==0
+        # Setup is repeatable and preserves edited rates, bills, and payments.
+        frozen=con.execute('SELECT id,total_due,electricity,water FROM billing ORDER BY id').fetchall()
+        payment_history=con.execute('SELECT id,amount,balance_after FROM payments ORDER BY id').fetchall()
+        subprocess.run([PHP,'database/setup.php'],cwd=ROOT,env=env,check=True,capture_output=True,text=True)
+        assert con.execute('SELECT fixed_electricity,fixed_water FROM rooms WHERE id=?',[room_a]).fetchone()==(99999,33333)
+        assert con.execute('SELECT id,total_due,electricity,water FROM billing ORDER BY id').fetchall()==frozen
+        assert con.execute('SELECT id,amount,balance_after FROM payments ORDER BY id').fetchall()==payment_history
         con.close()
-        print('PASS: MySQL core flows plus tenant onboarding, payment guide, GCash submission, validated private proof uploads, staff approval/rejection, receipt and balance updates, duplicate/overpayment/carry protection, cancellation, tenant inbox, inquiries, profile updates, and tenant privacy.')
+        print('PASS: MySQL core flows plus tenant onboarding, payment guide, GCash submission, validated private proof uploads, staff approval/rejection, receipt and balance updates, duplicate/overpayment/carry protection, cancellation, tenant inbox, inquiries, profile updates, tenant privacy, final departure billing, proration, stale-preview protection, missing-period protection, atomic bed release, fixed room rates, exact shared rounding, frozen rates, transfer allocation, batch rollback, and repeatable migration.')
     finally:
         if con:
             for (filename,) in con.execute('SELECT proof_file FROM payment_submissions WHERE proof_file IS NOT NULL').fetchall():

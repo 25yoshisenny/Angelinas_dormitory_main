@@ -68,18 +68,20 @@ function handle_action(): void {
         case 'password':
             if(!password_verify($_POST['current_password']??'',$u['password_hash'])) throw new RuntimeException('Current password is incorrect.');
             $pw=required('new_password');
-            if(strlen($pw)<10 || $pw!==($_POST['confirm_password']??'') || password_verify($pw,$u['password_hash'])) throw new RuntimeException('Use a different password of at least 10 characters and confirm it correctly.');
+            if(strlen($pw)<10 || strlen($pw)>72 || $pw!==($_POST['confirm_password']??'') || password_verify($pw,$u['password_hash'])) throw new RuntimeException('Use a different password of at least 10 and at most 72 bytes and confirm it correctly.');
             query('UPDATE users SET password_hash=?,must_change=0 WHERE id=?',[password_hash($pw,PASSWORD_DEFAULT),$u['id']]); audit('Changed own password'); break;
         case 'room':
-            require_role(['admin']); $capacity=(int)required('capacity');
+            require_role(['admin']); required('fixed_electricity');required('fixed_water');$capacity=(int)required('capacity');
             if($capacity<1||$capacity>30) throw new RuntimeException('Room capacity must be between 1 and 30.');
-            query('INSERT INTO rooms(number,capacity,rent) VALUES(?,?,?)',[required('number'),$capacity,cents('rent')]); $id=(int)db()->lastInsertId();
+            query('INSERT INTO rooms(number,capacity,rent,fixed_electricity,fixed_water) VALUES(?,?,?,?,?)',[required('number'),$capacity,cents('rent'),cents('fixed_electricity'),cents('fixed_water')]); $id=(int)db()->lastInsertId();
             for($i=1;$i<=$capacity;$i++) query('INSERT INTO bed_spaces(room_id,label) VALUES(?,?)',[$id,'Bed '.$i]); audit('Created room','rooms',$id); break;
         case 'room_update':
-            require_role(['admin']); $id=(int)required('room_id'); $st=required('status');
+            require_role(['admin']); required('fixed_electricity');required('fixed_water');$id=(int)required('room_id'); $st=required('status');
             if(!in_array($st,['active','maintenance'],true)) throw new RuntimeException('Invalid room status.');
             if($st==='maintenance' && one('SELECT a.id FROM tenant_assignments a JOIN bed_spaces b ON b.id=a.bed_id WHERE b.room_id=? AND a.end_date IS NULL',[$id])) throw new RuntimeException('Transfer active tenants before marking this room for maintenance.');
-            query('UPDATE rooms SET rent=?,status=? WHERE id=?',[cents('rent'),$st,$id]); audit('Updated room','rooms',$id); break;
+            if(!one('SELECT id FROM rooms WHERE id=?',[$id])) throw new RuntimeException('Room not found.');
+            $old=one('SELECT rent,fixed_electricity,fixed_water,status FROM rooms WHERE id=?',[$id]);
+            query('UPDATE rooms SET rent=?,status=?,fixed_electricity=?,fixed_water=? WHERE id=?',[cents('rent'),$st,cents('fixed_electricity'),cents('fixed_water'),$id]); audit('Updated room and fixed utility rates','rooms',$id,json_encode(['before'=>$old,'after'=>['rent'=>cents('rent'),'status'=>$st,'fixed_electricity'=>cents('fixed_electricity'),'fixed_water'=>cents('fixed_water')],'effect'=>'Future unfrozen billing periods only'])); break;
         case 'tenant':
             require_role(['admin']); $email=required('email');
             if(!filter_var($email,FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid email address.');
@@ -127,7 +129,7 @@ function handle_action(): void {
             query('UPDATE tenant_assignments SET end_date=? WHERE id=?',[$date,$a['id']]); audit('Recorded move-out; history retained','tenants',$id); break;
         case 'bill':
             require_role(['admin']);
-            $statementId=create_statement((int)required('tenant_id'),period_input(),date_input('cutoff'),date_input('due_date'),cents('rent'),cents('electricity'),cents('water'),cents('discount'),cents('adjustment',true),trim($_POST['discount_reason']??''),trim($_POST['adjustment_reason']??'')); $return='statement&id='.$statementId; break;
+            $statementId=create_statement((int)required('tenant_id'),period_input(),date_input('cutoff'),date_input('due_date'),cents('rent'),cents('discount'),cents('adjustment',true),trim($_POST['discount_reason']??''),trim($_POST['adjustment_reason']??'')); $return='statement&id='.$statementId; break;
         case 'adjust_bill':
             require_role(['admin']); $id=(int)required('billing_id'); $b=bill($id);
             if(!$b || $b['carried_to']) throw new RuntimeException('Carried statements cannot be adjusted; adjust the current statement.');
@@ -168,14 +170,14 @@ function handle_action(): void {
             $registered=(int)query('SELECT COUNT(*) FROM tenant_assignments a JOIN bed_spaces b ON b.id=a.bed_id WHERE b.room_id=? AND a.end_date IS NULL',[$id])->fetchColumn();
             query('INSERT INTO occupancy_scans(room_id,detected_count,registered_count,capacity,source,notes,scanned_by) VALUES(?,?,?,?,?,?,?)',[$id,$count,$registered,$r['capacity'],$source,trim($_POST['notes']??''),$u['id']]); audit('Recorded occupancy count','occupancy_scans',(int)db()->lastInsertId()); break;
         case 'staff':
-            require_role(['admin']); $pw=required('temporary_password'); if(strlen($pw)<10) throw new RuntimeException('Password must have at least 10 characters.');
+            require_role(['admin']); $pw=required('temporary_password'); if(strlen($pw)<10 || strlen($pw)>72) throw new RuntimeException('Password must have at least 10 and at most 72 bytes.');
             query("INSERT INTO users(username,password_hash,role,name) VALUES(?,?,'staff',?)",[required('username'),password_hash($pw,PASSWORD_DEFAULT),required('name')]); audit('Created staff account','users',(int)db()->lastInsertId()); break;
         case 'toggle_user':
             require_role(['admin']); $id=(int)required('user_id'); if($id===$u['id']) throw new RuntimeException('You cannot disable your own account.');
             query('UPDATE users SET active=1-active WHERE id=?',[$id]); audit('Changed account access','users',$id); break;
         case 'reset_password':
             require_role(['admin']); $id=(int)required('user_id'); if($id===$u['id']) throw new RuntimeException('Use your account page to change your own password.');
-            $pw=required('temporary_password'); if(strlen($pw)<10) throw new RuntimeException('Password must have at least 10 characters.');
+            $pw=required('temporary_password'); if(strlen($pw)<10 || strlen($pw)>72) throw new RuntimeException('Password must have at least 10 and at most 72 bytes.');
             query('UPDATE users SET password_hash=?,must_change=1 WHERE id=?',[password_hash($pw,PASSWORD_DEFAULT),$id]); audit('Reset account password','users',$id); break;
         case 'reminders':
             require_role(['admin']);

@@ -39,7 +39,7 @@ For a resident already recorded without a login, Admin uses **User accounts → 
 - Browser camera person counting and explicitly labeled manual verification. Scan records contain detected count, registered occupancy, and capacity snapshots.
 - Queued billing notifications, payment receipts, overdue reminders, configurable encrypted SMTP delivery, retryable failures, and audit logs.
 - Tenant accounts can access only their own statements, payments, receipts, and deposits. Staff manage payments and view the billing information needed to receive them.
-- Batch monthly billing with room rent filled automatically, per-resident utility charges, selectable residents, estimated totals, duplicate-period skipping, and atomic transactions.
+- Batch monthly billing with room rent filled automatically, automatic fixed room utility shares, selectable residents, estimated totals, duplicate-period skipping, and atomic transactions.
 - A live calculator for individual statements, automatic room rent, and cutoff/due date defaults that cap dates at the end of short months.
 - Financial reports with date filters, GCash and personal collection summaries, operating expenses, current balance aging, and protected CSV exports.
 - A resident account ledger that excludes carried balances from new charges, avoiding duplicate receivables.
@@ -142,3 +142,17 @@ The signed-out default is now a dedicated commercial landing page (`?page=home`)
 
 
 Shared visual theme: assets/green-theme.css sets a consistent forest/sage palette and Inter typography for landing, authentication, admin, and tenant views. Icons respond to hover/focus on pointer devices; reduced-motion preferences disable the movement. assets/dorm-courtyard.png is an AI-generated architectural concept, not a photograph of the actual property, and is labeled on the landing hero. Built-in imagegen prompt: photorealistic modest Philippine two-story dormitory courtyard, pale white exterior, sage trim, tropical planting, natural morning daylight; no people, signage, text, logos, or resort styling. The image is used locally as the hero/authentication background and the About section visual.
+
+
+## Proposal completion and departure billing
+
+See [PROPOSAL-COVERAGE.md](PROPOSAL-COVERAGE.md) for the requirement-by-requirement mapping and operating assumptions. Admin can now use **Billing Statements ? Final Bill & Departure**, or the link in resident management, to preview final rent and utilities and confirm move-out atomically. Full-month and calendar-day rent policies are supported. Existing monthly bills are updated without duplicating charges, prior balances and confirmed payments are retained, and deposits remain separately settled. Pending transfers and changed account data require review before departure. **Rooms & Beds ? Occupancy Checks** exposes the existing camera/manual monitor. Keyboard navigation includes a skip link and visible focus indicators.
+
+
+## Fixed monthly room utilities
+
+Rooms 101?104 now have configurable whole-room monthly electricity/water rates of PHP 650/180, 850/220, 1,100/280, and 750/200 respectively. Admin edits these in **Rooms & Beds ? Room settings**. Individual and batch billing automatically divide utilities among the frozen monthly occupants, with exact centavo rounding. Utility fields cannot override the allocation. Tenant room details show whole-room estimates; statements show individual shares.
+
+The first issued bill freezes the entire month?s rates and occupancy. Transfers and departures keep their frozen share; later arrivals start utility charging next month. Existing statements retain their original charges. Transition months with legacy manual room bills do not collect a second utility pool. Rate edits affect unfrozen periods. Final billing retains previously issued utilities and computes utilities automatically when no bill exists.
+
+Run `C:\xampp\php\php.exe database\setup.php` for the additive migration. The live installation has already been migrated without changing existing resident or financial records. Back up the `settings` table along with financial records: it stores immutable monthly allocation snapshots. See [FIXED-UTILITIES-REPORT.md](FIXED-UTILITIES-REPORT.md) for the precise policy, migration, reviewed modules, changes, and regression coverage. A focused departure test is available with `C:\xampp\php\php.exe tests\utility_departure.php`.
