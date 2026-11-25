@@ -21,9 +21,9 @@ if(paymentChoice){const recipient=document.querySelector('[name="payment_recipie
 (() => {
  const startButton=document.getElementById('tenant-qr-start');
  if(!startButton)return;
- const panel=document.getElementById('tenant-qr-scanner'),video=document.getElementById('tenant-qr-video'),canvas=document.getElementById('tenant-qr-canvas'),stopButton=document.getElementById('tenant-qr-stop'),camera=document.getElementById('tenant-qr-camera'),file=document.getElementById('tenant-qr-file'),status=document.getElementById('tenant-qr-status'),result=document.getElementById('tenant-qr-result');
+ const panel=document.getElementById('tenant-qr-scanner'),video=document.getElementById('tenant-qr-video'),canvas=document.getElementById('tenant-qr-canvas'),stopButton=document.getElementById('tenant-qr-stop'),file=document.getElementById('tenant-qr-file'),status=document.getElementById('tenant-qr-status'),result=document.getElementById('tenant-qr-result');
  let stream=null,running=false,generation=0;
- const stop=()=>{generation++;running=false;stream?.getTracks().forEach(track=>track.stop());stream=null;video.srcObject=null;video.hidden=true;startButton.disabled=false;stopButton.disabled=true;camera.disabled=false;};
+ const stop=()=>{generation++;running=false;stream?.getTracks().forEach(track=>track.stop());stream=null;video.srcObject=null;video.hidden=true;startButton.disabled=false;stopButton.disabled=true;};
  const clear=()=>{result.replaceChildren();result.hidden=true;};
  const decode=image=>{
   const width=image.videoWidth||image.naturalWidth,height=image.videoHeight||image.naturalHeight;
@@ -58,8 +58,7 @@ if(paymentChoice){const recipient=document.querySelector('[name="payment_recipie
    const billList=document.createElement('dl');billList.className='tenant-qr-details';
    addDetail(billList,'Billing Period',bill.period);
    addDetail(billList,'Rent',formatMoney(bill.rent));
-   addDetail(billList,'Water',formatMoney(bill.water));
-   addDetail(billList,'Electricity',formatMoney(bill.electricity));
+   addDetail(billList,'Electricity and Water',formatMoney(Number(bill.electricity||0)+Number(bill.water||0)));
    addDetail(billList,'Other charges',formatMoney(bill.other_charges));
    addDetail(billList,'Previous balance',formatMoney(bill.previous_balance));
    addDetail(billList,'Discounts',formatMoney(bill.discounts));
@@ -95,26 +94,26 @@ if(paymentChoice){const recipient=document.querySelector('[name="payment_recipie
    const response=await fetch('index.php?tenant_qr_lookup=1',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-Token':panel.dataset.tenantQrCsrf},body:new URLSearchParams({token:payload}),cache:'no-store'});
    const data=await response.json();
    if(!response.ok)throw new Error(data.error||'The QR code could not be verified.');
-   renderAccount(data);result.hidden=false;status.textContent='QR verified. Only information for your signed-in account is shown.';
+   renderAccount(data);result.hidden=false;status.textContent='QR verified. Only information for your signed-in account is shown. Start the scanner again to scan another QR.';
   }catch(error){status.textContent=error.message||'The QR code could not be verified. Try again.';}
  };
  const start=async()=>{
   stop();clear();const attempt=generation;
-  startButton.disabled=true;stopButton.disabled=false;camera.disabled=true;status.textContent='Requesting camera access...';
+  startButton.disabled=true;stopButton.disabled=false;status.textContent='Requesting rear camera access...';
   try{
    if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Camera access needs localhost or HTTPS. Choose a QR image instead.');
    let incoming;
-   try{incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:camera.value},width:{ideal:1280},height:{ideal:720}}});}
+   try{incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{exact:'environment'},width:{ideal:1280},height:{ideal:720}}});}
    catch(error){if(!['OverconstrainedError','NotFoundError'].includes(error.name))throw error;incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:true});}
    if(attempt!==generation){incoming.getTracks().forEach(track=>track.stop());return;}
    stream=incoming;video.srcObject=stream;video.hidden=false;await video.play();
    if(attempt!==generation)return;
-   running=true;status.textContent='Hold the complete tenant QR code steady in the camera view.';
+   running=true;status.textContent='Show the complete tenant QR code to the rear camera. It will detect automatically.';
    const scan=()=>{
     if(!running||attempt!==generation)return;
     try{const payload=decode(video);if(payload){void verify(payload);return;}}
     catch(error){stop();status.textContent=error.message;return;}
-    setTimeout(scan,180);
+    setTimeout(scan,100);
    };
    scan();
   }catch(error){
@@ -125,9 +124,8 @@ if(paymentChoice){const recipient=document.querySelector('[name="payment_recipie
  };
  startButton.addEventListener('click',start);
  stopButton.addEventListener('click',()=>{stop();status.textContent='Camera stopped.';});
- camera.addEventListener('change',()=>{stop();status.textContent='Camera selection updated. Start the scanner again.';});
  file.addEventListener('change',async()=>{
-  stop();clear();const attempt=generation,selected=file.files[0];if(!selected)return;
+  stop();clear();const attempt=generation,selected=file.files[0];if(!selected)return;file.value='';
   if(selected.size>5*1024*1024){status.textContent='Choose an image smaller than 5 MB.';return;}
   status.textContent='Reading QR image...';const url=URL.createObjectURL(selected);
   try{

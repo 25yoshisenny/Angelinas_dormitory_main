@@ -534,6 +534,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'GCash payment verified' not in tenant.get('index.php?page=inbox')[1]
         statement=admin.get('index.php?page=statement&id='+str(current_bill))[1]
         assert 'STATEMENT OF ACCOUNT' in statement and 'Payments applied' in statement
+        assert 'Electricity and Water</td>' in statement and 'Utilities <small>Electricity and water</small>' not in statement
         receipt=other.get('index.php?page=receipt&id='+str(pid))[1]
         assert 'PAYMENT RECEIPT' in receipt and 'Transaction reference' in receipt
         # Operating expense idempotency and audited correction preserve the original.
@@ -556,9 +557,9 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         other.post('inquiry','support',category='Billing',subject='Question about electricity',message='Please explain the electricity charge.')
         assert 'Question about electricity' in staff.get('index.php?page=support')[1]
         assert 'Question about electricity' not in tenant.get('index.php?page=support')[1]
-        staff.post('reply_inquiry','support',inquiry_id=1,reply='The electricity charge is shown separately in your statement.')
-        assert 'shown separately' in other.get('index.php?page=support')[1]
-        assert 'shown separately' in other.get('index.php?page=inbox')[1]
+        staff.post('reply_inquiry','support',inquiry_id=1,reply='Electricity and water are combined in one charge on your statement.')
+        assert 'combined in one charge' in other.get('index.php?page=support')[1]
+        assert 'combined in one charge' in other.get('index.php?page=inbox')[1]
         other.post('profile_update','profile',name='Updated Resident',email='updated@example.com',contact='09173333333',tenant_id=1)
         assert con.execute('SELECT name,email FROM tenants WHERE id=2').fetchone()==('Updated Resident','updated@example.com')
         assert con.execute('SELECT name FROM tenants WHERE id=1').fetchone()[0]=='Maria Santos (Demo)'
@@ -734,6 +735,8 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert first_qr[1] not in admin.get('index.php?page=qr_management')[1]
         scan_status,scan_result=scan_tenant_qr(other,'ADQR1:'+first_qr[1])
         assert scan_status==200 and scan_result['tenant']['id']==qr_tenant
+        repeat_status,repeat_result=scan_tenant_qr(other,'ADQR1:'+first_qr[1])
+        assert repeat_status==200 and repeat_result['tenant']['id']==qr_tenant
         expected_tenant_name=con.execute('SELECT name FROM tenants WHERE id=?',[qr_tenant]).fetchone()[0]
         expected_room_info=con.execute('SELECT r.number,bs.label FROM tenant_assignments a JOIN bed_spaces bs ON bs.id=a.bed_id JOIN rooms r ON r.id=bs.room_id WHERE a.tenant_id=? AND a.end_date IS NULL',[qr_tenant]).fetchone()
         assert (scan_result['tenant']['name'],scan_result['tenant']['room'],scan_result['tenant']['bed'])==(expected_tenant_name,str(expected_room_info[0]),expected_room_info[1])

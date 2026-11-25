@@ -9,7 +9,7 @@
 .receipt-delivery{display:flex;align-items:center;justify-content:space-between;gap:20px}.receipt-delivery h3{margin:8px 0}@media(max-width:760px){.receipt-delivery{align-items:flex-start;flex-direction:column}}
 .tenant-qr-scan-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:22px}
 .tenant-qr-preview{max-width:560px;min-height:0;background:#152c35;border-radius:12px;overflow:hidden}
-.tenant-qr-preview video{position:static!important;inset:auto!important;display:block;width:100%;height:auto!important;min-height:220px;max-height:380px;aspect-ratio:4/3;object-fit:contain}
+.tenant-qr-preview video{position:static!important;inset:auto!important;display:block;width:100%;height:auto!important;min-height:220px;max-height:380px;aspect-ratio:4/3;object-fit:contain;transform:none!important}
 .tenant-qr-preview video[hidden],.tenant-qr-scan-panel canvas[hidden]{display:none!important}
 .tenant-qr-scan-panel .camera-choice{display:block;margin-bottom:12px}
 .tenant-qr-scan-panel .scanner-note{line-height:1.75}
