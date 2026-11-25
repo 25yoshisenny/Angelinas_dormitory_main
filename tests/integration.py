@@ -293,10 +293,12 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'less than payments' in html
         staff=Client(); staff.login('staff','Staff@12345','staff'); staff.post('password','account',current_password='Staff@12345',new_password='StaffTesting@2026',confirm_password='StaffTesting@2026')
         assert staff.get('index.php?page=tenants')[0]==403
-        assert staff.get('index.php?page=batch')[0]==200
-        assert 'Monthly Billing Run' in staff.get('index.php?page=dashboard')[1]
-        room_page=staff.get('index.php?page=rooms')
-        assert room_page[0]==200 and 'Room 101' in room_page[1] and 'Create room' not in room_page[1] and 'Save room settings' not in room_page[1]
+        assert staff.get('index.php?page=batch')[0]==403
+        assert staff.get('index.php?page=rooms')[0]==403
+        staff_dashboard=staff.get('index.php?page=dashboard')[1]
+        assert 'href="?page=rooms"' not in staff_dashboard and 'href="?page=batch"' not in staff_dashboard
+        assert staff.get('index.php?batch_preview=1&room_id=1&period=2027-01')[0]==403
+        assert 'do not have access' in staff.post('batch_billing','batch')
         assert 'do not have access' in staff.post('room','payments',number='BLOCKED',capacity=4,rent=1000)
         tenant=Client(); tenant.login('tenant','Tenant@12345'); tenant.post('password','account',current_password='Tenant@12345',new_password='TenantTesting@2026',confirm_password='TenantTesting@2026')
         assert tenant.get('index.php?page=accounts')[0]==403
@@ -361,6 +363,9 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'Leaking tap' not in other.post('request_update','requests',request_id=1,status='open',admin_note='Unauthorized')
         assert con.execute('SELECT COUNT(*) FROM payments').fetchone()[0]==4
         admin.post('bill','billing',tenant_id=2,period=current,cutoff=current+'-15',due_date=current+'-28',rent=5000,electricity=0,water=0,discount=0,adjustment=0)
+        rejected_gcash=staff.post('payment','payments',billing_id=3,payer='New Tenant',amount=1000,method='GCash',payment_date=today,reference='STAFF-GCASH',idempotency_key='staff-gcash-rejected')
+        assert 'Staff may only record cash payments.' in rejected_gcash
+        assert con.execute("SELECT COUNT(*) FROM payments WHERE idempotency_key='staff-gcash-rejected'").fetchone()[0]==0
         staff.post('payment','payments',billing_id=3,payer='New Tenant',amount=1000,method='Personal Payment',payment_date=today,reference='',idempotency_key='staff-received')
         assert con.execute('SELECT amount,received_by,tenant_id FROM payments WHERE billing_id=3').fetchone()==(100000,2,2)
         assert 'Another Tenant' in other.get('index.php?page=receipt&id=5')[1]
@@ -454,6 +459,11 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'Payment verification' not in admin.get('index.php?page=dashboard')[1]
         assert 'Incoming tenant payments' in admin.get('index.php?page=payments')[1]
         assert 'Incoming tenant payments' in staff.get('index.php?page=payments')[1]
+        admin_payments=admin.get('index.php?page=payments')[1]
+        staff_payments=staff.get('index.php?page=payments')[1]
+        assert 'Reference (required for GCash)' in admin_payments
+        assert 'Reference (required for GCash)' not in staff_payments
+        assert 'GCash - already verified' not in staff_payments
 
         # Due notices are scoped, deduplicated, and available without SMTP.
         original_due=con.execute('SELECT due_date FROM billing WHERE id=?',[current_bill]).fetchone()[0]
@@ -718,7 +728,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=? AND period=?',[people[2],rollback_month]).fetchone()[0]==1
         assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id IN (?,?) AND period=?',[people[1],room_b_person,rollback_month]).fetchone()[0]==0
         con.execute('UPDATE rooms SET fixed_electricity=?,fixed_water=? WHERE id=?',[*room_b_totals,room_b])
-        assert '1 statements created' in staff.post('batch_billing','batch',room_id=room_b,period=rollback_month,cutoff=rollback_month+'-15',due_date=rollback_month+'-28',room_utilities=room_b_utilities,discount='0',**{'selected[]':room_b_person})
+        assert '1 statements created' in admin.post('batch_billing','batch',room_id=room_b,period=rollback_month,cutoff=rollback_month+'-15',due_date=rollback_month+'-28',room_utilities=room_b_utilities,discount='0',**{'selected[]':room_b_person})
         assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=? AND period=?',[room_b_person,rollback_month]).fetchone()[0]==1
         assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id IN (?,?) AND period=?',[people[0],people[2],rollback_month]).fetchone()[0]==2
         qr_tenant_ids=[row[0] for row in con.execute("SELECT id FROM tenants WHERE status='active' ORDER BY id").fetchall()]

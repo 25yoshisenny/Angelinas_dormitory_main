@@ -33,7 +33,7 @@ function monthly_batch_preview(int $roomId,string $period,?array $utilityTotals=
     return ['room'=>['id'=>(int)$room['id'],'number'=>$room['number'],'utilities'=>(int)$snapshotRoom['electricity']+(int)$snapshotRoom['water'],'utility_locked'=>$locked||$snapshotRoom['legacy']],'period'=>$period,'tenants'=>$tenants,'total'=>array_sum(array_map(fn($tenant)=>$tenant['eligible']?$tenant['total']:0,$tenants))];
 }
 function monthly_batch_preview_response(): never {
-    require_role(['admin','staff']);
+    require_role(['admin']);
     header('Content-Type: application/json; charset=utf-8');
     try {
         $roomId=filter_var($_GET['room_id']??null,FILTER_VALIDATE_INT);
@@ -49,7 +49,7 @@ function monthly_batch_preview_response(): never {
     exit;
 }
 function create_statement(int $tenant,string $period,string $cutoff,string $due,int $rent,int $discount=0,int $adjustment=0,string $discountReason='',string $adjustmentReason='',?array $utilityOverrides=null): int {
-    $u=require_role(['admin','staff']);
+    $u=require_role(['admin']);
     $a=one('SELECT * FROM tenant_assignments WHERE tenant_id=? AND end_date IS NULL',[$tenant]);
     if(!$a) throw new RuntimeException('Only actively assigned tenants can receive new monthly bills.');
     if(one("SELECT id FROM payment_submissions WHERE tenant_id=? AND status='pending'",[$tenant])) throw new RuntimeException('Review this tenant’s pending payment submissions before generating the next bill.');
@@ -76,7 +76,7 @@ function feature_action(string $action,array $u): bool {
     if(qr_management_action($action,$u)) return true;
     switch($action) {
     case 'batch_billing':
-        require_role(['admin','staff']); $roomId=(int)required('room_id'); $period=period_input(); $cutoff=date_input('cutoff'); $due=date_input('due_date');
+        require_role(['admin']); $roomId=(int)required('room_id'); $period=period_input(); $cutoff=date_input('cutoff'); $due=date_input('due_date');
         if(!one("SELECT id FROM rooms WHERE id=? AND status='active' FOR UPDATE",[$roomId])) throw new RuntimeException('Choose an active room for this billing run.');
         if($due<$cutoff) throw new RuntimeException('Due date must be on or after cutoff.');
         $selected=$_POST['selected']??[]; if(!is_array($selected)||!$selected) throw new RuntimeException('Select at least one tenant to bill.');

@@ -221,7 +221,7 @@ function handle_action(): void {
             require_role(['admin','staff']); $key=required('idempotency_key'); if(one('SELECT id FROM payments WHERE idempotency_key=?',[$key])) break;
             $id=(int)required('billing_id'); $b=bill($id); $amt=cents('amount');
             if(!$b||$b['carried_to']||$amt<=0||$amt>balance($b)) throw new RuntimeException('Payment must be positive and no greater than the current bill balance.');
-            $method=required('method'); if(!in_array($method,['GCash','Personal Payment'],true)) throw new RuntimeException('Invalid payment method.');
+            $method=required('method'); if(!in_array($method,['GCash','Personal Payment'],true)) throw new RuntimeException('Invalid payment method.'); if($u['role']==='staff'&&$method!=='Personal Payment') throw new RuntimeException('Staff may only record cash payments.');
             $ref=trim($_POST['reference']??''); if($method==='GCash' && $ref==='') throw new RuntimeException('GCash reference is required.');
             $date=date_input('payment_date'); if($date>date('Y-m-d')) throw new RuntimeException('Payment date cannot be in the future.');
             if($method==='GCash' && one("SELECT id FROM payments WHERE method='GCash' AND reference=?",[$ref])) throw new RuntimeException('This GCash reference has already been recorded.');

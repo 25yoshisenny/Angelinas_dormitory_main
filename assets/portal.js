@@ -10,7 +10,7 @@ if(qrStart){
  const paymentFields=data=>{const fields={};if(!data.startsWith('000201'))return fields;let pos=0;while(pos+4<=data.length){const tag=data.slice(pos,pos+2),length=Number(data.slice(pos+2,pos+4));if(!/^\d{2}$/.test(tag)||!Number.isFinite(length)||pos+4+length>data.length)return {};fields[tag]=data.slice(pos+4,pos+4+length);pos+=4+length;}return pos===data.length?fields:{};};
  const display=data=>{stop();const matched=officialData&&data===officialData,fields=paymentFields(data);status.textContent=matched?'QR matches the official dormitory QR. Confirm the recipient and amount in GCash before paying.':fields['59']?'Payment QR detected. Check the receiving account in GCash before confirming the transfer.':'QR detected, but no recognized payment details were found. Use the dormitory?s official GCash QR.';details.hidden=false;const heading=document.createElement('strong');heading.textContent=matched?'Official dormitory QR':fields['59']?'Scanned payment details':'QR scan result';details.replaceChildren(heading);const description=document.createElement('p');description.textContent=fields['59']?'Recipient: '+fields['59']+(fields['54']?' ? QR amount: PHP '+fields['54']:' ? Enter the amount in GCash'):matched?'Complete your payment in GCash, then submit the reference for verification.':'This code is not confirmed as a dormitory payment QR. No transfer has been made.';details.append(description);result.hidden=false;raw.hidden=false;result.textContent=data;};
  const official=document.getElementById('official-payment-qr');if(official){const load=()=>{try{officialData=decode(official);}catch{}};official.addEventListener('load',load);if(official.complete)load();}
- const start=async()=>{stop();clear();const attempt=generation;qrStart.disabled=true;stopButton.disabled=false;camera.disabled=true;status.textContent='Requesting camera access...';try{if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Camera access needs localhost or HTTPS. On a phone, an HTTP computer address cannot access the camera. Choose a QR image instead.');let incoming;try{incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:camera.value},width:{ideal:1280},height:{ideal:720}}});}catch(error){if(!['OverconstrainedError','NotFoundError'].includes(error.name))throw error;incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:true});}if(attempt!==generation){incoming.getTracks().forEach(track=>track.stop());return;}stream=incoming;video.muted=true;video.srcObject=stream;video.hidden=false;await video.play();if(attempt!==generation)return;running=true;status.textContent='Hold the complete payment QR steady in the camera view. Avoid glare and move closer if needed.';const scan=()=>{if(!running||attempt!==generation)return;try{const data=decode(video);if(data){display(data);return;}}catch(error){stop();status.textContent=error.message;return;}setTimeout(scan,180);};scan();}catch(error){if(attempt!==generation)return;stop();status.textContent=error.name==='NotAllowedError'?'Camera permission was denied. Allow camera access in your browser settings, or choose a QR image instead.':error.name==='NotReadableError'?'The camera is busy or unavailable. Close other camera apps, then try again or choose a QR image.':error.name==='NotFoundError'?'No usable camera was found. Choose a QR image instead.':error.message;}};
+ const start=async()=>{stop();clear();const attempt=generation;qrStart.disabled=true;stopButton.disabled=false;camera.disabled=true;status.textContent='Requesting camera access...';try{if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Camera access needs localhost or HTTPS. On a phone, an HTTP computer address cannot access the camera. Choose a QR image instead.');let incoming;try{incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:camera.value},width:{ideal:1280},height:{ideal:720}}});}catch(error){if(!['OverconstrainedError','NotFoundError'].includes(error.name))throw error;incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:camera.value},width:{ideal:1280},height:{ideal:720}}});}if(attempt!==generation){incoming.getTracks().forEach(track=>track.stop());return;}stream=incoming;video.muted=true;video.srcObject=stream;video.hidden=false;await video.play();if(attempt!==generation)return;running=true;status.textContent='Hold the complete payment QR steady in the camera view. Avoid glare and move closer if needed.';const scan=()=>{if(!running||attempt!==generation)return;try{const data=decode(video);if(data){display(data);return;}}catch(error){stop();status.textContent=error.message;return;}setTimeout(scan,180);};scan();}catch(error){if(attempt!==generation)return;stop();status.textContent=error.name==='NotAllowedError'?'Camera permission was denied. Allow camera access in your browser settings, or choose a QR image instead.':error.name==='NotReadableError'?'The camera is busy or unavailable. Close other camera apps, then try again or choose a QR image instead.':error.name==='NotFoundError'?'No usable camera was found. Choose a QR image instead.':error.message;}};
  document.addEventListener('paymentmethodchange',()=>{stop();clear();status.textContent='Select Start scanner or choose a QR image.';});
  qrStart.addEventListener('click',start);stopButton.addEventListener('click',()=>{stop();status.textContent='Camera stopped.';});camera.addEventListener('change',()=>{stop();status.textContent='Camera selection updated. Select Start scanner to continue.';});file.addEventListener('change',async()=>{stop();clear();const attempt=generation,selected=file.files[0];if(!selected)return;if(selected.size>5*1024*1024){status.textContent='Choose an image smaller than 5 MB.';return;}status.textContent='Reading QR image...';const url=URL.createObjectURL(selected);try{const image=new Image();image.src=url;await image.decode();if(attempt!==generation)return;const data=decode(image);if(data)display(data);else status.textContent='No readable QR found. Choose a clear image containing the complete QR and its white border.';}catch(error){if(attempt===generation)status.textContent='The image could not be scanned. Choose a JPG, PNG, or WebP image.';}finally{URL.revokeObjectURL(url);}});window.addEventListener('pagehide',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden){stop();status.textContent='Camera paused. Start the scanner again when you are ready.';}});
 }
@@ -35,6 +35,12 @@ if(paymentChoice){const recipient=document.querySelector('[name="payment_recipie
   context.drawImage(image,0,0,canvas.width,canvas.height);
   const pixels=context.getImageData(0,0,canvas.width,canvas.height);
   return window.jsQR(pixels.data,pixels.width,pixels.height,{inversionAttempts:'attemptBoth'})?.data||null;
+ };
+ const createNativeDetector=async()=>{
+  const Detector=window.BarcodeDetector;
+  if(typeof Detector!=='function'||typeof Detector.getSupportedFormats!=='function')return null;
+  try{return (await Detector.getSupportedFormats()).includes('qr_code')?new Detector({formats:['qr_code']}):null;}
+  catch{return null;}
  };
  const addDetail=(list,label,value)=>{
   const wrapper=document.createElement('div'),term=document.createElement('dt'),description=document.createElement('dd');
@@ -104,18 +110,29 @@ if(paymentChoice){const recipient=document.querySelector('[name="payment_recipie
    if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Camera access needs localhost or HTTPS. Choose a QR image instead.');
    let incoming;
    try{incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{exact:'environment'},width:{ideal:1280},height:{ideal:720}}});}
-   catch(error){if(!['OverconstrainedError','NotFoundError'].includes(error.name))throw error;incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:true});}
+   catch(error){if(!['OverconstrainedError','NotFoundError'].includes(error.name))throw error;incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});}
    if(attempt!==generation){incoming.getTracks().forEach(track=>track.stop());return;}
    stream=incoming;video.srcObject=stream;video.hidden=false;await video.play();
    if(attempt!==generation)return;
+   let detector=await createNativeDetector(),nativeFramesSinceFallback=0;
+   if(attempt!==generation)return;
    running=true;status.textContent='Show the complete tenant QR code to the rear camera. It will detect automatically.';
-   const scan=()=>{
+   const scan=async()=>{
     if(!running||attempt!==generation)return;
-    try{const payload=decode(video);if(payload){void verify(payload);return;}}
+    try{
+     let payload=null;
+     if(detector){
+      try{payload=(await detector.detect(video))[0]?.rawValue||null;}
+      catch{detector=null;}
+     }
+     if(!detector)payload=decode(video);
+     else if(!payload&&++nativeFramesSinceFallback>=4){payload=decode(video);nativeFramesSinceFallback=0;}
+     if(payload){void verify(payload);return;}
+    }
     catch(error){stop();status.textContent=error.message;return;}
-    setTimeout(scan,100);
+    setTimeout(()=>{void scan();},100);
    };
-   scan();
+   void scan();
   }catch(error){
    if(attempt!==generation)return;
    stop();
