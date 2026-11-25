@@ -8,11 +8,11 @@ function icon(string $name): string {
         'batch'=>'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h3m-3 3h7"/>',
         'payments'=>'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h3"/>',
         'deposits'=>'<path d="m12 3 8 4v6c0 5-8 8-8 8s-8-3-8-8V7l8-4Z m-4 9 3 3 5-6"/>',
+        'qr_management'=>'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zm4 4h3v3h-3z"/>',
         'reports'=>'<path d="M3 3v18h18M7 16v-4m5 4V7m5 9v-6"/>',
         'expenses'=>'<path d="M20 8V5a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14v11H6a3 3 0 0 1-3-3V6m13 8h5v4h-5v-4Z"/>',
         'requests'=>'<path d="m14 5 4 4 3-3a7 7 0 0 1-9 9l-7 7-3-3 7-7a7 7 0 0 1 9-9l-4 2Z"/>',
         'announcements'=>'<path d="m3 10 14-6v16L3 14v-4Z m4 5 2 6h3l-2-5M21 8v8"/>',
-        'occupancy'=>'<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
         'notifications'=>'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
         'accounts'=>'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
         'audit'=>'<path d="M8 3h12v18H4V7m4-4v4H4m4 4h8m-8 4h8m-8 3h5"/>',
@@ -32,20 +32,33 @@ function feature_view(string $page,array $u): bool {
     case 'announcements':announcements_view($u); return true;
     case 'settings':settings_view(); return true;
     case 'ledger':ledger_view($u); return true;
+    case 'qr_management':qr_management_view(); return true;
     default:return false;
     }
 }
 function batch_view(): void {
-    $tenants=assigned(); $all=aging_rows(); $balances=[];
-    foreach($all as $b) $balances[$b['tenant_id']]=($balances[$b['tenant_id']]??0)+balance($b);
-    section_start('One billing run. Every resident.','Room rent is filled automatically. Review each resident’s utility charges before generating.');
-    if(!$tenants) { echo '<p class="empty">Register an active resident to start a billing run.</p></section>'; return; }
-    form_start('batch_billing','batch'); field('Billing month','period','month',date('Y-m'),true,'data-billing-period'); field('Cutoff date','cutoff','date',billing_date(date('Y-m'),'cutoff_day')); field('Due date','due_date','date',billing_date(date('Y-m'),'due_day'));
-    echo '<div class="form-wide table-wrap"><table class="batch-table"><thead><tr><th><input type="checkbox" id="select-all" checked aria-label="Select all residents"></th><th>Resident / room</th><th>Monthly rent</th><th>Electricity (₱)</th><th>Water (₱)</th><th>Previous balance</th><th>Estimated total</th></tr></thead><tbody>';
-    foreach($tenants as $t) {
-        $prev=$balances[$t['tenant_id']]??0; echo '<tr data-batch-row data-rent="'.$t['rent'].'" data-previous="'.$prev.'"><td><input type="checkbox" name="selected[]" value="'.$t['tenant_id'].'" checked aria-label="Bill '.e($t['name']).'"></td><td><strong>'.e($t['name']).'</strong><small>Room '.e($t['number']).' / '.e($t['label']).'</small></td><td>'.money($t['rent']).'</td><td><input type="number" readonly min="0" step="0.01" name="electricity['.$t['tenant_id'].']" value="0" aria-label="Electricity for '.e($t['name']).'"></td><td><input type="number" readonly min="0" step="0.01" name="water['.$t['tenant_id'].']" value="0" aria-label="Water for '.e($t['name']).'"></td><td>'.money($prev).'</td><td><strong data-batch-total>'.money($prev+$t['rent']).'</strong></td></tr>';
-    }
-    echo '</tbody></table></div><p class="form-wide muted" data-utility-note role="status">'.e(utility_policy_text()).'</p><div class="bill-preview form-wide"><div><span>Estimated billing run total</span><strong id="batch-grand-total">—</strong></div><p>Existing or later statements are skipped. Previous balances are carried once. No late fees are added.</p></div>'; submit('Generate selected statements'); echo '</section>';
+    $rooms=rows("SELECT r.id,r.number,(SELECT COUNT(*) FROM bed_spaces b WHERE b.room_id=r.id) bed_count FROM rooms r WHERE r.status='active' ORDER BY r.number");
+    section_start('Monthly billing by room','Enter the selected room’s utility totals and generate statements for its active tenants.');
+    if(!$rooms) { echo '<div class="notice">No active rooms are available for billing.</div></section>'; return; }
+    $selectedRoom=(int)($_GET['room_id']??0);
+    if(!array_filter($rooms,fn($room)=>(int)$room['id']===$selectedRoom)) $selectedRoom=(int)$rooms[0]['id'];
+    $period=date('Y-m');
+    form_start('batch_billing','batch');
+    echo '<label>Select Room to Bill<select name="room_id" required data-batch-room>';
+    foreach($rooms as $room) echo '<option value="'.e($room['id']).'" '.((int)$room['id']===$selectedRoom?'selected':'').'>Room '.e($room['number']).'</option>';
+    echo '</select></label>';
+    field('Billing month','period','month',$period,true,'data-billing-period data-batch-period');
+    field('Cutoff date','cutoff','date',billing_date($period,'cutoff_day'));
+    field('Due date','due_date','date',billing_date($period,'due_day'));
+    amount_field('Room utilities total (electricity + water, PHP)','room_utilities',0);
+    amount_field('Discount per tenant (PHP)','discount',0);
+    field('Discount reason','discount_reason','text','',false,'maxlength="500"');
+    echo '<p class="form-wide muted">The room discount is applied in full to every tenant selected for this billing run; it is not divided. The combined electricity and water total is split among the room’s snapshot occupants.</p>';
+    echo '<div class="form-wide table-wrap"><table class="batch-table"><thead><tr><th><input type="checkbox" data-batch-select-all checked aria-label="Select all eligible tenants"></th><th>Tenant / bed</th><th>Monthly rent</th><th>Utilities share (₱)</th><th>Previous balance</th><th>Estimated total</th></tr></thead><tbody data-batch-rows><tr><td colspan="6" class="empty">Loading room billing details…</td></tr></tbody></table></div>';
+    echo '<p class="form-wide muted" data-batch-status role="status">Loading selected room…</p><p class="form-wide muted">'.e(utility_policy_text()).'</p>';
+    echo '<div class="bill-preview form-wide"><div><span>Room billing total (all eligible tenants)</span><strong data-batch-grand-total>—</strong></div><div><span>Selected to generate</span><strong data-batch-selected-total>—</strong></div><p>Only eligible tenants in this room are included. Tenants with an existing or later statement are excluded. Previous balances are carried once; no late fees are added.</p></div>';
+    submit('Generate Billing','Generate monthly bills for the selected room and billing period?');
+    echo '</section>';
 }
 function reports_view(): void {
     [$from,$to]=report_dates(); echo '<div class="report-print"><div class="report-title"><h2>'.e(setting('business_name')).' - Financial report</h2><p>'.e($from).' through '.e($to).' - Amounts in PHP</p></div>'; $payments=rows('SELECT p.*,t.name,u.name receiver FROM payments p JOIN tenants t ON t.id=p.tenant_id JOIN users u ON u.id=p.received_by WHERE p.voided_at IS NULL AND p.payment_date BETWEEN ? AND ? ORDER BY p.payment_date DESC,p.id DESC',[$from,$to]);
@@ -58,9 +71,9 @@ function reports_view(): void {
     [$activeResidents,$occupiedBeds,$availableBeds,$occupancyRate,$totalBeds]=dormitory_metrics();
     echo '<div class="operation-summary"><div><span>Occupied beds</span><strong>'.$occupiedBeds.' / '.$totalBeds.'</strong></div><div><span>Available beds</span><strong>'.$availableBeds.'</strong></div><div><span>Occupancy rate</span><strong>'.$occupancyRate.'%</strong></div></div>';
     $liveOutstanding=0;$liveOverdue=0;foreach(aging_rows() as $balanceRow){$liveOutstanding+=balance($balanceRow);if(status($balanceRow)==='overdue')$liveOverdue+=balance($balanceRow);}
-    echo '<div class="operation-summary"><div><span>Current outstanding balance</span><strong>'.money($liveOutstanding).'</strong></div><div><span>Current overdue balance</span><strong>'.money($liveOverdue).'</strong></div><div><span>Active residents</span><strong>'.$activeResidents.'</strong></div></div>';
+    echo '<div class="operation-summary"><div><span>Current outstanding balance</span><strong>'.money($liveOutstanding).'</strong></div><div><span>Current overdue balance</span><strong>'.money($liveOverdue).'</strong></div><div><span>Active tenants</span><strong>'.$activeResidents.'</strong></div></div>';
     collection_charts($from,$to,$cash,$gcash);
-    $expenseCategories=[];foreach(rows('SELECT category,SUM(amount) amount FROM expenses WHERE voided_at IS NULL AND expense_date BETWEEN ? AND ? GROUP BY category',[$from,$to]) as $expense)$expenseCategories[$expense['category']]=(int)$expense['amount'];report_bar_chart('Operating expenses by category',$expenseCategories?:['No expenses'=>0],'Recorded costs in the selected period, excluding voided expenses.');
+    $expenseCategories=[];foreach(rows('SELECT category,SUM(amount) amount FROM expenses WHERE voided_at IS NULL AND expense_date BETWEEN ? AND ? GROUP BY category',[$from,$to]) as $expense)$expenseCategories[$expense['category']]=(int)$expense['amount'];report_bar_chart('Operating expenses by category',$expenseCategories?:['No expenses'=>0],'Recorded costs in the selected period, excluding voided expenses.',true,'expenses');
     $params='&from='.urlencode($from).'&to='.urlencode($to);
     echo '<div class="report-actions no-print"><button type="button" data-print>Print report</button><a class="button" href="?export=collections'.$params.'">'.icon('reports').' Export collections CSV</a><a class="button" href="?export=expenses'.$params.'">Export expenses CSV</a><a class="button" href="?export=aging">Export outstanding balances CSV</a></div>';
     section_start('Outstanding balance aging','Current balances grouped by the due date on the current statement, including carried balances.');
@@ -68,16 +81,16 @@ function reports_view(): void {
     foreach(aging_rows() as $b) { if(balance($b)===0) continue; $days=(int)(new DateTime($b['due_date']))->diff(new DateTime('today'))->format('%r%a'); $key=$days<=0?'Not yet due':($days<=30?'1–30 days':($days<=60?'31–60 days':($days<=90?'61–90 days':'90+ days'))); $buckets[$key]+=balance($b); $b['days']=max(0,$days);$current[]=$b; }
     echo '<div class="aging-grid">'; foreach($buckets as $label=>$value) echo '<div><span>'.e($label).'</span><strong>'.money($value).'</strong></div>'; echo '</div>';
     report_bar_chart('Outstanding balances by age',$buckets,'Live receivables on current statements. Carried balances are counted once.');
-    echo '<div class="table-wrap"><table><thead><tr><th>Resident</th><th>Period</th><th>Due date</th><th>Days overdue</th><th>Balance</th><th>Status</th></tr></thead><tbody>'; if(!$current) empty_row(6,'No outstanding balances.');
+    echo '<div class="table-wrap"><table><thead><tr><th>Tenant</th><th>Period</th><th>Due date</th><th>Days overdue</th><th>Balance</th><th>Status</th></tr></thead><tbody>'; if(!$current) empty_row(6,'No outstanding balances.');
     foreach($current as $b) echo '<tr><td>'.e($b['name']).'<small>'.e($b['contact']).'</small></td><td><a href="?page=statement&id='.$b['id'].'">'.e($b['period']).'</a></td><td>'.e($b['due_date']).'</td><td>'.$b['days'].'</td><td>'.money(balance($b)).'</td><td>'.badge(status($b)).'</td></tr>'; echo '</tbody></table></div></section>';
-    section_start('Collections register',count($payments).' payments · operating expenses '.money($expenses)); echo '<div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Resident</th><th>Date</th><th>Method</th><th>Amount</th><th>Received by</th></tr></thead><tbody>'; if(!$payments) empty_row(6);
+    section_start('Collections register',count($payments).' payments · operating expenses '.money($expenses)); echo '<div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Tenant</th><th>Date</th><th>Method</th><th>Amount</th><th>Received by</th></tr></thead><tbody>'; if(!$payments) empty_row(6);
     foreach($payments as $p) echo '<tr><td><a href="?page=receipt&id='.$p['id'].'">AD-'.$p['id'].'</a></td><td>'.e($p['name']).'</td><td>'.e($p['payment_date']).'</td><td>'.e($p['method']).'</td><td>'.money($p['amount']).'</td><td>'.e($p['receiver']).'</td></tr>'; echo '</tbody></table></div></section>';
     echo '</div>';
 }
 function expenses_view(): void { operating_expenses(); }
 function requests_view(array $u): void {
     if($u['role']==='tenant') { section_start('Room maintenance','Request a repair for your assigned room.'); if(one('SELECT id FROM tenant_assignments WHERE tenant_id=? AND end_date IS NULL',[$u['tenant_id']])) { form_start('request','requests'); field('Short title','title'); select_field('Priority','priority',['normal'=>'Normal','urgent'=>'Urgent']); textarea_field('What happened?','description'); submit('Submit request'); } else echo '<p>Your room must be assigned before you can request a repair. For account or assignment questions, <a href="?page=support">contact the office</a>.</p>'; echo '</section>'; }
-    section_start($u['role']==='tenant'?'My requests':'Resident maintenance requests','Room information is saved when each request is submitted.');
+    section_start($u['role']==='tenant'?'My requests':'Tenant maintenance requests','Room information is saved when each request is submitted.');
     $requests=rows('SELECT m.*,t.name,r.number FROM maintenance_requests m JOIN tenants t ON t.id=m.tenant_id JOIN rooms r ON r.id=m.room_id '.($u['role']==='tenant'?'WHERE m.tenant_id=? ':'').'ORDER BY m.id DESC',$u['role']==='tenant'?[$u['tenant_id']]:[]);
     if(!$requests) echo '<p class="empty">No maintenance requests yet.</p>';
     foreach($requests as $m) { echo '<article class="request-card"><div class="request-heading"><div><span class="eyebrow">ROOM '.e($m['number']).' · '.e($m['name']).'</span><h3>'.e($m['title']).'</h3></div><div>'.badge($m['priority']).' '.badge($m['status']).'</div></div><p>'.nl2br(e($m['description'])).'</p><small>Submitted '.e($m['created_at']).' UTC</small>'; if($m['admin_note']) echo '<div class="response-note"><strong>Dormitory response</strong><p>'.nl2br(e($m['admin_note'])).'</p></div>';
@@ -88,7 +101,7 @@ function announcements_view(array $u): void {
     if($u['role']==='admin') { section_start('Post an announcement','Visible to all active accounts until its expiry or archive date.'); form_start('announcement','announcements'); field('Title','title'); field('Expires on (optional)','expires_on','date','',false); textarea_field('Message','message'); submit('Publish announcement'); echo '</section>'; }
     section_start('Dormitory notice board');
     $all=rows('SELECT a.*,u.name FROM announcements a JOIN users u ON u.id=a.created_by '.($u['role']==='admin'?'':"WHERE a.active=1 AND (a.expires_on IS NULL OR a.expires_on>=?) ").'ORDER BY a.id DESC',$u['role']==='admin'?[]:[date('Y-m-d')]); if(!$all) echo '<p class="empty">All quiet here. New announcements will appear on this board.</p>';
-    foreach($all as $a) { echo '<article class="announcement-card"><div class="request-heading"><h3>'.e($a['title']).'</h3>'.badge(!$a['active']?'archived':($a['expires_on'] && $a['expires_on']<date('Y-m-d')?'expired':'active')).'</div><p>'.nl2br(e($a['message'])).'</p><small>'.e($a['name']).' · '.e($a['created_at']).' UTC'.($a['expires_on']?' · Until '.e($a['expires_on']):'').'</small>'; if($u['role']==='admin') { echo '<details><summary>Edit / publish notice</summary>';form_start('edit_announcement','announcements');echo '<input type="hidden" name="announcement_id" value="'.$a['id'].'">';field('Title','title','text',$a['title']);field('Expires on (optional)','expires_on','date',$a['expires_on']??'',false);textarea_field('Message','message',$a['message']);select_field('Publication status','active',['1'=>'Published','0'=>'Archived'],$a['active']);submit('Save notice');echo '</details>'; } if($u['role']==='admin' && $a['active']) { form_start('archive_announcement','announcements','inline-form'); echo '<input type="hidden" name="announcement_id" value="'.$a['id'].'">'; submit('Archive'); } echo '</article>'; } echo '</section>';
+    foreach($all as $a) { echo '<article class="announcement-card"><div class="request-heading"><h3>'.e($a['title']).'</h3>'.badge(!$a['active']?'archived':($a['expires_on'] && $a['expires_on']<date('Y-m-d')?'expired':'active')).'</div><p>'.nl2br(e($a['message'])).'</p><small>'.e($a['name']).' · '.e($a['created_at']).' UTC'.($a['expires_on']?' · Until '.e($a['expires_on']):'').'</small>'; if($u['role']==='admin') { echo '<details><summary>Edit / publish notice</summary>';form_start('edit_announcement','announcements');echo '<input type="hidden" name="announcement_id" value="'.$a['id'].'">';field('Title','title','text',$a['title']);field('Expires on (optional)','expires_on','date',$a['expires_on']??'',false);textarea_field('Message','message',$a['message']);select_field('Publication status','active',['1'=>'Published','0'=>'Archived'],$a['active']);submit('Save notice');echo '</details>'; } if($u['role']==='admin' && $a['active']) { form_start('archive_announcement','announcements','inline-form'); echo '<input type="hidden" name="announcement_id" value="'.$a['id'].'">'; submit('Archive','Archive this announcement? It will no longer be visible to tenants.'); } echo '</article>'; } echo '</section>';
 }
 function settings_view(): void {
     payment_settings_view();
@@ -97,8 +110,8 @@ function settings_view(): void {
 }
 function ledger_view(array $u): void {
     $tenant=$u['role']==='tenant'?(int)$u['tenant_id']:(int)($_GET['tenant_id']??array_key_first(tenant_options())??0);
-    if($u['role']==='admin') { section_start('Choose a resident'); echo '<form method="get" class="report-filter"><input type="hidden" name="page" value="ledger">'; select_field('Resident','tenant_id',tenant_options(),$tenant); echo '<button class="primary">View ledger</button></form></section>'; }
-    $t=one('SELECT * FROM tenants WHERE id=?',[$tenant]); if(!$t) { echo '<p class="empty">Select a resident with an account.</p>'; return; }
+    if($u['role']==='admin') { section_start('Choose a tenant'); echo '<form method="get" class="report-filter"><input type="hidden" name="page" value="ledger">'; select_field('Tenant','tenant_id',tenant_options(),$tenant); echo '<button class="primary">View ledger</button></form></section>'; }
+    $t=one('SELECT * FROM tenants WHERE id=?',[$tenant]); if(!$t) { echo '<p class="empty">Select a tenant with an account.</p>'; return; }
     $entries=[];
     foreach(rows('SELECT * FROM billing WHERE tenant_id=?',[$tenant]) as $b) $entries[]=['date'=>$b['created_at'],'order'=>0,'id'=>$b['id'],'text'=>'Statement '.$b['period'].' · charges after adjustments','debit'=>$b['total_due']-$b['previous_balance'],'credit'=>0,'page'=>'statement','state'=>''];
     foreach(rows('SELECT * FROM payments WHERE tenant_id=?',[$tenant]) as $p) { $entries[]=['date'=>$p['created_at'],'order'=>1,'id'=>$p['id'],'text'=>'Receipt AD-'.$p['id'].' · '.$p['method'],'debit'=>0,'credit'=>$p['amount'],'page'=>'receipt','state'=>$p['voided_at']?'Voided payment; reversal below':'']; if($p['voided_at']) $entries[]=['date'=>$p['voided_at'],'order'=>2,'id'=>$p['id'],'text'=>'Payment reversal · '.$p['void_reason'],'debit'=>$p['amount'],'credit'=>0,'page'=>'receipt','state'=>'']; }
@@ -110,13 +123,13 @@ function dashboard_extras(array $u): void {
     if(in_array($u['role'],['admin','staff'],true)) {
         $pending=one("SELECT COUNT(*) count,COALESCE(SUM(amount),0) amount FROM payment_submissions WHERE status='pending'");
         $confirmed=(int)query('SELECT COALESCE(SUM(amount),0) FROM payments WHERE voided_at IS NULL AND payment_date=?',[date('Y-m-d')])->fetchColumn();
-        echo '<div class="attention-banner"><div>'.icon('payments').'<strong>Payment activity</strong><span>'.$pending['count'].' awaiting verification · '.money($pending['amount']).' pending · '.money($confirmed).' confirmed today</span></div><a href="?page=payments">Review submissions →</a><a href="?page=payments">Confirmed payments →</a></div>';
+        echo '<div class="attention-banner"><div>'.icon('payments').'<strong>Payment activity</strong><span>'.$pending['count'].' awaiting verification · '.money($pending['amount']).' pending · '.money($confirmed).' confirmed today</span></div><a href="?page=payments">Review submissions</a><a href="?page=payments">Confirmed payments</a></div>';
     }
     $notices=rows('SELECT * FROM announcements WHERE active=1 AND (expires_on IS NULL OR expires_on>=?) ORDER BY id DESC LIMIT 2',[date('Y-m-d')]);
-    if($notices) { echo '<div class="dashboard-notices">'; foreach($notices as $a) echo '<a href="?page=announcements">'.icon('announcements').'<div><strong>'.e($a['title']).'</strong><small>'.e(mb_strimwidth($a['message'],0,100,'…')).'</small></div><span>Read notice →</span></a>'; echo '</div>'; }
+    if($notices) { echo '<div class="dashboard-notices">'; foreach($notices as $a) echo '<a href="?page=announcements">'.icon('announcements').'<div><strong>'.e($a['title']).'</strong><small>'.e(mb_strimwidth($a['message'],0,100,'…')).'</small></div><span>Read notice</span></a>'; echo '</div>'; }
     if($u['role']==='admin') {
         $overdue=array_filter(aging_rows(),fn($b)=>status($b)==='overdue');
         $open=(int)query("SELECT COUNT(*) FROM maintenance_requests WHERE status!='resolved'")->fetchColumn();
-        echo '<div class="attention-banner"><div>'.icon('reports').'<strong>Your attention, in one place.</strong><span>'.count($overdue).' overdue statements · '.$open.' open maintenance requests</span></div><a href="?page=reports">Review balances →</a></div>';
+        echo '<div class="attention-banner"><div>'.icon('reports').'<strong>Your attention, in one place.</strong><span>'.count($overdue).' overdue statements · '.$open.' open maintenance requests</span></div><a href="?page=reports">Review balances</a></div>';
     }
 }

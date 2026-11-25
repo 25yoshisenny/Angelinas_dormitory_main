@@ -1,0 +1,4 @@
+.two-factor-qr{display:flex;justify-content:center;margin:20px auto}
+.two-factor-qr img{display:block;width:240px;max-width:100%;height:auto;background:#fff;border:1px solid #dfe7df;border-radius:12px;padding:12px}
+.two-factor-secret,.recovery-codes{display:block;margin-top:8px;padding:12px;background:#f4f7f2;border:1px solid #e0e8dc;border-radius:8px;font-family:monospace;overflow-wrap:anywhere}
+.recovery-codes{white-space:pre-wrap}

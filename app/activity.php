@@ -32,6 +32,6 @@ function activity_view(array $u): void {
     form_start('read_notifications','inbox','inline-form'); echo '<input type="hidden" name="seen_through" value="'.($items[0]['id']??0).'">'; submit('Mark displayed notifications as read');
     if(!$items) echo '<p class="empty">You are all caught up. New updates will appear here.</p>';
     $seen=(int)setting('activity_seen_'.$u['id'],'0');
-    foreach($items as $item) echo '<a class="activity-item '.((int)$item['id']>$seen?'unread':'').'" href="'.e($item['url']).'"><div><span class="eyebrow">'.e(local_time($item['created_at'])).'</span><h3>'.e($item['title']).'</h3><p>'.nl2br(e($item['message'])).'</p></div><span>View →</span></a>';
+    foreach($items as $item) echo '<a class="activity-item '.((int)$item['id']>$seen?'unread':'').'" href="'.e($item['url']).'"><div><span class="eyebrow">'.e(local_time($item['created_at'])).'</span><h3>'.e($item['title']).'</h3><p>'.nl2br(e($item['message'])).'</p></div><span>View</span></a>';
     echo '</section>';
 }

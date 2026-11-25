@@ -4,43 +4,56 @@ A PHP 8.2 application built from `Angelinas_Dormitory_Complete_System_Flow_and_D
 
 ## Open the system
 
-Start **Apache** and **MySQL** in the XAMPP Control Panel, then open **http://localhost/dormitory/**. The live database has already been created and the earlier records migrated.
+Start **Apache** and **MySQL** in the XAMPP Control Panel, then open **http://localhost/Angelina-s_dormitory/**. This is the XAMPP Apache site on port 80.
 
-Alternatively, with XAMPP MySQL running, run `powershell -ExecutionPolicy Bypass -File .\start.ps1` in this folder and open **http://localhost:8080/**. Keep the terminal running while using the system. A preview server is also running at that address for this session.
+Alternatively, with XAMPP MySQL and Apache configured, run `powershell -ExecutionPolicy Bypass -File .\start.ps1` in this folder and open **http://localhost:8080/**. Keep the terminal running while using the system; this server starts only when you run the script. It reads the TOTP key from the XAMPP Apache configuration unless `DORMITORY_TOTP_ENCRYPTION_KEY` is already set in the environment.
 
-Connection settings are in **config.database.php**: host `127.0.0.1`, port `3306`, database `angelinas_dormitory`, user `root`, empty password for this local XAMPP installation. Update the file if your MySQL credentials change. View tables through **http://localhost/phpmyadmin/** when Apache is running.
+Connection settings can be supplied through **config.database.php** or the `DORMITORY_DB_*` environment variables. Without overrides, this local XAMPP setup uses host `127.0.0.1`, port `3306`, database `angelinas_dormitory`, user `root`, and an empty password. View tables through **http://localhost/phpmyadmin/** when Apache is running.
 
-For a new installation, run `C:\xampp\php\php.exe database\setup.php`. It creates the database and tables without replacing existing records. `database/schema.sql` is the MySQL table structure and `database/angelinas_dormitory.sql` is an importable snapshot of the migrated database. Import a snapshot only into an empty database selected in phpMyAdmin.
+For a new installation, run `C:\xampp\php\php.exe database\setup.php`. It creates the database and tables without replacing existing records. `database/schema.sql` is the MySQL table structure and `database/angelinas_dormitory.sql` is an importable snapshot of the current database. Import a snapshot only into an empty database selected in phpMyAdmin. The snapshot contains private tenant, payment, account, and security records; never commit or share it publicly. Export a fresh snapshot after changes when an authorized transfer is needed.
 
-Existing usernames, password hashes, and histories were preserved. The credentials below apply to fresh installations; if you already changed a password, continue using that password.
+Existing usernames, password hashes, and histories are preserved. Sign in uses one shared form; the Landlady may use her username or email, while Staff and Tenant accounts continue using their usernames. The assigned role determines the dashboard and permissions. The credentials below apply to fresh installations; if you already changed a password, continue using that password.
 
 | Role | Username | Initial password |
 | --- | --- | --- |
-| Administrator | admin | Admin@12345 |
-| Payment staff | staff | Staff@12345 |
+| Landlady | admin | Admin@12345 |
+| Staff | staff | Staff@12345 |
 | Tenant demonstration account | tenant | Tenant@12345 |
 
-Each account must choose a new password on first sign-in. The initial data includes four rooms and one tenant clearly named **Maria Santos (Demo)**, with a sample bill and deposit. Real tenants receive their own accounts through **Tenants → Register a new tenant**. Move out the demo tenant to free its bed; its records remain as demonstration history.
+## Admin Google Authenticator
+
+Install the PHP dependencies from the project folder with `composer install` if `vendor\autoload.php` is missing. On an existing installation, create only the missing Admin two-factor tables using their `CREATE TABLE IF NOT EXISTS` definitions in `database\schema.sql`; do not run the full `database\setup.php` solely to enable 2FA, because it also applies unrelated schema/data migrations.
+
+The authenticator secret is encrypted in the database. Generate a private encryption key in PowerShell:
+
+```powershell
+$totpKey = & 'C:\xampp\php\php.exe' -r "echo base64_encode(random_bytes(32));"
+```
+
+Add the key with a `SetEnv DORMITORY_TOTP_ENCRYPTION_KEY "<generated key>"` directive inside a `<Directory "C:/xampp/htdocs/Angelina-s_dormitory">` block in `C:\xampp\apache\conf\httpd.conf`, then restart Apache. `start.ps1` reads that setting for its PHP development server. Keep the key private and back it up securely: if it is lost or changed, existing authenticator secrets cannot be decrypted.
+
+On the first Landlady sign-in after setup, scan the displayed QR code in Google Authenticator (or enter its manual setup key), then enter the current 6-digit code to finish enrollment. Save the recovery codes somewhere private; they are displayed only once. Future Landlady sign-ins require the password followed by a code on the separate verification page. Staff sign-in is unchanged. The Security page supports recovery-code replacement and disabling 2FA after another valid code is provided; disabling signs the Landlady out.
+
+Seeded and Admin-created accounts use a temporary password that must be changed on first sign-in. Self-registered Tenants choose their password during registration. Re-run `C:\xampp\php\php.exe database\setup.php` to upgrade an existing installation: tenant account emails are migrated where unambiguous, and legacy `admin`/`staff` demo accounts may receive reserved `.test` contact addresses. Admins can update usernames and contact emails under **User Accounts**; usernames are unique and remain the sign-in ID. The initial data includes four rooms and one tenant clearly named **Maria Santos (Demo)**, with a sample bill and deposit. Real tenants receive their own accounts through **Tenants → Register a new tenant**. Move out the demo tenant to free its bed; its records remain as demonstration history.
 
 ## Included features
 
-New tenants can create their own accounts from **Login → Create tenant account**. Enter name, email, contact number, username, password, and confirmation. The system creates a linked tenant account immediately and returns to sign-in with the Tenant role selected. Self-registration always creates the Tenant role and does not require a temporary-password change. Existing tenant emails and usernames cannot be reused to claim another tenant’s records.
+New tenants can create their own accounts from **Sign In → Create New Account**. Enter name, email, contact number, username, password, and confirmation. The system creates a linked tenant account immediately and returns to the shared sign-in page. Self-registration always creates the Tenant role and does not require a temporary-password change. Existing tenant emails and usernames cannot be reused to claim another tenant’s records. Admins create and assign Admin/Staff accounts, and update account usernames and emails, under **User Accounts**; public registration cannot grant those roles.
 
-Self-registration does not occupy a bed. The account shows **Not assigned yet** until Admin opens **Residents → Manage → Assign room & bed** and records move-in. The tenant can sign in immediately and can see only their own account. Admin-created accounts remain available under **User accounts → Create new tenant account** and use temporary passwords changed on first login.
+Self-registration does not occupy a bed. The account shows **Not assigned yet** until the Landlady opens **Tenants → Manage → Assign room & bed** and records move-in. The tenant can sign in immediately and can see only their own account. Landlady-created accounts remain available under **User accounts → Create new tenant account** and use temporary passwords changed on first login.
 
 For a resident already recorded without a login, Admin uses **User accounts → Create login for an existing tenant**. Existing accounts use **Reset password** or **Enable access** instead. Admin and Staff accounts cannot be created through public registration.
 
-- One role-based login with individual password hashes, first-login password changes, login throttling, server-side access checks, and CSRF protection.
+- One username-and-password login for Admin, Staff, and Tenant with automatic role detection, individual password hashes, first-login password changes, login throttling, server-side access checks, and CSRF protection.
 - Admin: tenant registration and editing, room and bed creation, room maintenance status, rent editing, bed transfers, assignment history, and move-out without deleting records.
-- Monthly bills for rent, water, and electricity; cutoff and due dates; separate discounts and signed adjustments with reasons; printable statements and corrections.
+- Room-based monthly bills for rent, one combined room utilities total (electricity plus water), and a per-tenant room discount; cutoff and due dates; audited corrections and printable statements.
 - Previous outstanding balances carry into the newest bill. Older carried statements cannot receive additional payments. The overview counts outstanding balances only on current statements.
 - Multiple partial payments, GCash references and personal payments, payer/date/receiver records, duplicate submission and reference protection, printable receipts, and paid/partial/unpaid/overdue statuses.
 - Security deposits kept separate from rent, with move-out refunds and recorded deductions.
-- Browser camera person counting and explicitly labeled manual verification. Scan records contain detected count, registered occupancy, and capacity snapshots.
 - Queued billing notifications, payment receipts, overdue reminders, configurable encrypted SMTP delivery, retryable failures, and audit logs.
-- Tenant accounts can access only their own statements, payments, receipts, and deposits. Staff manage payments and view the billing information needed to receive them.
-- Batch monthly billing with room rent filled automatically, automatic fixed room utility shares, selectable residents, estimated totals, duplicate-period skipping, and atomic transactions.
-- A live calculator for individual statements, automatic room rent, and cutoff/due date defaults that cap dates at the end of short months.
+- Tenant accounts can access only their own statements, payments, receipts, and deposits. Staff manage payments, view room availability and billing information, and cannot edit room settings.
+- Batch monthly billing by room with the combined monthly utilities total split among room occupants, a full per-tenant discount applied to each selected resident, estimated totals, duplicate-period skipping, and atomic transactions.
+- A live room-billing estimate for utility shares, rent, previous balances, discounts, and selected tenants.
 - Financial reports with date filters, GCash and personal collection summaries, operating expenses, current balance aging, and protected CSV exports.
 - A resident account ledger that excludes carried balances from new charges, avoiding duplicate receivables.
 - Admin-only payment voiding with a reason, retained receipts, balance restoration, correction notification, and audit trail. Payments on carried statements require a correction on the current bill instead.
@@ -75,7 +88,7 @@ Use phpMyAdmin → `angelinas_dormitory` → **Export**, or `mysqldump --single-
 
 With MySQL running, use `python tests\integration.py`. It creates a uniquely named `angelinas_test_*` MySQL database, starts a temporary server at localhost:8081, and removes the test database afterward. It never modifies the live database. Checks cover core flows plus batch billing, voided payments, immutable receipt balances, reports, CSV formula protection, maintenance, announcements, settings, ledger privacy, and MySQL constraints.
 
-Use `node tests\visual.js` for native headless Edge checks. This also uses a disposable MySQL database. It verifies desktop/mobile rendering, the live bill calculator, batch selection, mobile navigation, and JavaScript errors. Screenshots are saved under `storage/previews/`. Ports 8081, 8082, and 9223 must be free during these tests.
+Use `node tests\visual.js` for native headless Edge checks. This also uses a disposable MySQL database. It verifies desktop/mobile rendering, room utility totals and discount estimates, batch selection, mobile navigation, and JavaScript errors. Screenshots are saved under `storage/previews/`. Ports 8081, 8082, and 9223 must be free during these tests.
 
 Email delivery requires your SMTP credentials. Camera capture requires your browser permission and physical camera. These external integrations are implemented but cannot be confirmed end to end without those inputs.
 
@@ -103,7 +116,7 @@ When payment staff approves verified funds, the system generates the confirmed r
 
 All three roles have a notification bell with unread counts refreshed every 30 seconds. Tenants receive their own billing/reminder/receipt/reply notifications; Admin and Staff receive relevant billing/payment activity. Staff inquiry notifications are restricted to billing/payment categories. Marking notifications as read applies only to that user and the displayed notification range.
 
-Admin reports use a collections line chart, payment-method and statement-status doughnut charts, and balance-aging bars, with exact totals available. Redundant tenant ledger and payment-guide navigation and the unrelated occupancy sidebar entry are hidden; historical records and direct authorized routes remain preserved.
+Admin reports use a collections line chart, payment-method and statement-status doughnut charts, and balance-aging bars, with exact totals available. Redundant tenant ledger and payment-guide navigation are hidden. The Occupancy Checks page and scan controls are removed; existing scan records remain stored, and room occupancy metrics continue to use tenant assignments.
 
 Tests additionally cover receipt delivery links, notification role privacy and read state, QR-image decoding, a simulated camera stream, permission-denial handling, and camera track cleanup. Physical camera quality and actual GCash transfers must be checked on the device and official receiving account.
 
@@ -121,7 +134,7 @@ The QR scanner supports front/rear camera preference, default-camera fallback, c
 
 Tenant My Home now shows the current itemized bill, due date/countdown, one contextual next step, room rate, confirmed monthly payments, held deposit, latest receipt, recent notifications, and room support. The old account checklist and repeated general instructions are removed.
 
-Make a payment starts with a choice: **GCash account number**, **QR payment**, or **Office cash payment**. Only QR payment displays the scanner. Office payments show office details and no digital submission form; staff records the payment after receiving it. Changing methods stops any active camera. The QR video has its own visible layout rather than the generic absolutely positioned occupancy-video style. Tests verify the preview has a real visible height.
+Make a payment starts with a choice: **GCash account number**, **QR payment**, or **Office cash payment**. Only QR payment displays the scanner. Office payments show office details and no digital submission form; staff records the payment after receiving it. Changing methods stops any active camera. The QR video has its own visible layout. Tests verify the preview has a real visible height.
 
 Admin and Staff have one **Payments** page: incoming submissions at the top, confirmed payment history, and a collapsed office/verified-transfer form. Confirmation creates the receipt and updates the shared balance. The separate Payment verification navigation/page is removed; old bookmarks redirect to Payments. Successful tenant submissions open Payments & receipts to show their pending status.
 
@@ -132,7 +145,7 @@ My Home follows a room-and-billing layout: welcome card with room, bed, capacity
 Paid bills show their original total and Paid status. Unpaid/partial bills show the remaining amount marked Outstanding, with Pay Now unless pending submissions already cover it. Pending confirmations stay separate from actual payments. Room details link to the tenant?s own profile. Recent transactions are sorted by payment date, with voided payments excluded. Each Paid label refers to the confirmed transaction; a partial payment can still leave a bill balance.
 
 
-Admin workspace: the main sidebar contains twelve sections. Monthly billing is inside Billing Statements; Expenses and Account Ledger are tabs inside Financial Reports; the email delivery queue is under Settings. The top-right bell is the admin/staff notification entry point. Residents handles accommodation and resident registration, while User Accounts handles login access, password resets, and staff credentials. Overview separates financial and dormitory KPIs and links directly to tasks and alerts. Statement status is calculated from confirmed payments and due dates; pending submissions do not settle a bill. Notice Board supports editing, publishing, and archiving; maintenance updates preserve remarks in request history and the audit trail.
+Admin workspace: the main sidebar includes QR Code Management, where Admin can issue unique tenant QR tokens, view/download them, reissue and revoke codes, search/filter by room, and print individual, room, or all tenant ID cards. Tenants can scan their issued code from My Home to view their room and bed, current bill, verified payments, balance, status, and payment history. Scanning is limited to the signed-in tenant’s own active QR; other tenants’ information is not returned. QR payloads contain only random tokens. Run `C:\xampp\php\php.exe database\setup.php` to add the QR table on an existing installation without replacing tenant or billing data. Billing by Room is available beside Statements; Expenses and Account Ledger are tabs inside Financial Reports; the email delivery queue is under Settings. The top-right bell is the admin/staff notification entry point. Residents handles accommodation and resident registration, while User Accounts handles login access, password resets, and staff credentials. Overview separates financial and dormitory KPIs and links directly to tasks and alerts. Statement status is calculated from confirmed payments and due dates; pending submissions do not settle a bill. Notice Board supports editing, publishing, and archiving; maintenance updates preserve remarks in request history and the audit trail.
 
 
 Public entry: the default signed-out page combines a dormitory landing page with sign-in, resident portal features, and tenant registration links. The interior SVG is an illustration rather than a photograph of the actual property. All visual assets are local. Contextual back links return detail/forms to their relevant section; public registration returns to home. Existing authentication and role permissions are preserved.
@@ -141,18 +154,20 @@ Public entry: the default signed-out page combines a dormitory landing page with
 The signed-out default is now a dedicated commercial landing page (`?page=home`). Sign In and Get Started link to separate login and tenant registration screens. Dashboard figures and the October statement are explicitly labeled samples and never query public resident records. Public contact messages use CSRF validation, an IP-based rate limit, and a hidden spam field; accepted messages are saved as `public_contact` audit events and shown only in admin Help & Inquiries and notifications. No outgoing email is sent by this form. The supplied support email and Batangas location appear as requested; replace the phone placeholder through business contact settings before publishing and verify ownership of the support email. Privacy and Terms links open local pages describing current portal behavior.
 
 
-Shared visual theme: assets/green-theme.css sets a consistent forest/sage palette and Inter typography for landing, authentication, admin, and tenant views. Icons respond to hover/focus on pointer devices; reduced-motion preferences disable the movement. assets/dorm-courtyard.png is an AI-generated architectural concept, not a photograph of the actual property, and is labeled on the landing hero. Built-in imagegen prompt: photorealistic modest Philippine two-story dormitory courtyard, pale white exterior, sage trim, tropical planting, natural morning daylight; no people, signage, text, logos, or resort styling. The image is used locally as the hero/authentication background and the About section visual.
+Shared visual theme: the charcoal and burgundy styles provide consistent colors and Inter typography for landing, authentication, Admin, Staff, and Tenant views. Icons respond to hover/focus on pointer devices; reduced-motion preferences disable the movement. The dormitory photo remains a local asset; concept illustrations are labeled as such on the landing page.
 
 
 ## Proposal completion and departure billing
 
-See [PROPOSAL-COVERAGE.md](PROPOSAL-COVERAGE.md) for the requirement-by-requirement mapping and operating assumptions. Admin can now use **Billing Statements ? Final Bill & Departure**, or the link in resident management, to preview final rent and utilities and confirm move-out atomically. Full-month and calendar-day rent policies are supported. Existing monthly bills are updated without duplicating charges, prior balances and confirmed payments are retained, and deposits remain separately settled. Pending transfers and changed account data require review before departure. **Rooms & Beds ? Occupancy Checks** exposes the existing camera/manual monitor. Keyboard navigation includes a skip link and visible focus indicators.
+See [PROPOSAL-COVERAGE.md](PROPOSAL-COVERAGE.md) for the requirement-by-requirement mapping and operating assumptions. Admin can now use **Billing Statements ? Final Bill & Departure**, or the link in resident management, to preview final rent and utilities and confirm move-out atomically. Full-month and calendar-day rent policies are supported. Existing monthly bills are updated without duplicating charges, prior balances and confirmed payments are retained, and deposits remain separately settled. Pending transfers and changed account data require review before departure. Keyboard navigation includes a skip link and visible focus indicators.
 
 
-## Fixed monthly room utilities
+## Room utility compatibility
 
-Rooms 101?104 now have configurable whole-room monthly electricity/water rates of PHP 650/180, 850/220, 1,100/280, and 750/200 respectively. Admin edits these in **Rooms & Beds ? Room settings**. Individual and batch billing automatically divide utilities among the frozen monthly occupants, with exact centavo rounding. Utility fields cannot override the allocation. Tenant room details show whole-room estimates; statements show individual shares.
+Admins can rename a room or change its displayed room number under **Rooms & Beds → Room settings**. Room names must be unique; changing one does not alter its bed or billing history.
 
-The first issued bill freezes the entire month?s rates and occupancy. Transfers and departures keep their frozen share; later arrivals start utility charging next month. Existing statements retain their original charges. Transition months with legacy manual room bills do not collect a second utility pool. Rate edits affect unfrozen periods. Final billing retains previously issued utilities and computes utilities automatically when no bill exists.
+Fixed electricity and water values are no longer displayed or editable in **Rooms & Beds**. Existing database values and issued statement amounts are retained for compatibility; the current utility allocation still uses configured legacy values for months without a saved snapshot. Monthly room-reading entry is not yet available.
 
-Run `C:\xampp\php\php.exe database\setup.php` for the additive migration. The live installation has already been migrated without changing existing resident or financial records. Back up the `settings` table along with financial records: it stores immutable monthly allocation snapshots. See [FIXED-UTILITIES-REPORT.md](FIXED-UTILITIES-REPORT.md) for the precise policy, migration, reviewed modules, changes, and regression coverage. A focused departure test is available with `C:\xampp\php\php.exe tests\utility_departure.php`.
+Rooms without legacy utility values require monthly totals before an occupied room can be billed. Existing statements and saved snapshots remain unchanged.
+
+Back up the `settings` table along with financial records: it stores immutable monthly allocation snapshots. See [FIXED-UTILITIES-REPORT.md](FIXED-UTILITIES-REPORT.md) for the legacy policy and migration details. A focused departure test is available with `C:\xampp\php\php.exe tests\utility_departure.php`.

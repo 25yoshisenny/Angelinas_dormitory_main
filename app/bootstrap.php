@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__).'/vendor/autoload.php';
 date_default_timezone_set('Asia/Manila');
 if(PHP_SAPI!=='cli') {
 ini_set('session.use_strict_mode', '1');
@@ -35,6 +36,7 @@ function required(string $name): string { $v=trim((string)($_POST[$name]??'')); 
 function date_input(string $name): string { $v=required($name); $d=DateTime::createFromFormat('!Y-m-d',$v); if (!$d || $d->format('Y-m-d')!==$v) throw new RuntimeException('Invalid '.$name.'.'); return $v; }
 function user(): ?array { return isset($_SESSION['uid']) ? one('SELECT * FROM users WHERE id=? AND active=1',[$_SESSION['uid']]) : null; }
 function require_role(array $roles): array { $u=user(); if (!$u || !in_array($u['role'],$roles,true)) { http_response_code(403); throw new RuntimeException('You do not have access to this action.'); } return $u; }
+function role_label(string $role): string { return ['admin'=>'Landlady','staff'=>'Staff','tenant'=>'Tenant'][$role]??ucfirst($role); }
 function audit(string $action, string $type='', ?int $id=null, string $details=''): void { query('INSERT INTO audit_logs(user_id,action,record_type,record_id,details) VALUES(?,?,?,?,?)',[user()['id']??null,$action,$type,$id,$details]); }
 function token(): string { return $_SESSION['csrf']??=bin2hex(random_bytes(32)); }
 function csrf(): string { return '<input type="hidden" name="csrf" value="'.e(token()).'">'; }
@@ -53,6 +55,8 @@ function notify(int $tenant, ?int $billing, string $type, string $subject,string
 }
 function assigned(): array { return rows('SELECT a.*,t.name,r.number,r.rent,bs.label FROM tenant_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN bed_spaces bs ON bs.id=a.bed_id JOIN rooms r ON r.id=bs.room_id WHERE a.end_date IS NULL ORDER BY t.name'); }
 function available_beds(): array { return rows("SELECT bs.*,r.number FROM bed_spaces bs JOIN rooms r ON r.id=bs.room_id WHERE r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=bs.id AND a.end_date IS NULL) ORDER BY r.number,bs.label"); }
+function active_rooms_with_bed_counts(): array { return rows("SELECT r.id,r.number,COUNT(bs.id) bed_count,SUM(CASE WHEN bs.id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=bs.id AND a.end_date IS NULL) THEN 1 ELSE 0 END) available_count FROM rooms r LEFT JOIN bed_spaces bs ON bs.room_id=r.id WHERE r.status='active' GROUP BY r.id,r.number ORDER BY r.number"); }
+function available_room_beds(int $roomId): array { return rows("SELECT bs.id,bs.label FROM bed_spaces bs JOIN rooms r ON r.id=bs.room_id WHERE bs.room_id=? AND r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=bs.id AND a.end_date IS NULL) ORDER BY bs.id",[$roomId]); }
 function setting(string $key,string $default=''): string { $r=one('SELECT value FROM settings WHERE `key`=?',[$key]); return $r['value']??$default; }
 try { db(); } catch(PDOException $error) {
     error_log('Dormitory MySQL connection failed: '.$error->getCode()); http_response_code(503);

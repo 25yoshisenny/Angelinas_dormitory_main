@@ -22,9 +22,9 @@ No additional rooms existed in the live database. For an existing installation w
 - Every occupant in the snapshot participates, even when only some residents are selected for batch billing. Unselected residents retain their reserved share for later issuance.
 - Each utility is divided in integer centavos. Remaining centavos go to ascending tenant IDs. For example, PHP 850.01 across three residents becomes PHP 283.34, PHP 283.34, PHP 283.33. These sum exactly to the configured rate.
 - Utilities use a full-month snapshot policy, independent of the existing full-month/calendar-day **rent** policy. Transfers after freezing retain their original room share. Departures retain that month's share. Arrivals absent from an already frozen snapshot receive zero utilities that month and begin next month. Empty rooms have no tenant allocations.
-- Room rate changes affect months that have not yet been frozen. Issued bills and already frozen periods do not change. Admin uses existing reasoned billing adjustments for corrections.
+- Room rate changes affect months that have not yet been frozen. Issued bills and already frozen periods do not change. Admin may adjust the prefilled per-tenant electricity and water amounts in the monthly batch form; these edits affect only the statement, not the room rates or frozen snapshot. Individual statements and final departure billing continue to use automatic shares.
 - **Transition months:** a room with pre-existing manual bills keeps those actual charges, even if their sum differs from the new estimate. No additional room utility pool is collected for that room/month. This avoids rewriting history or double charging. Normal fixed allocation begins in the next unfrozen period without legacy bills.
-- Ordinary billing POST requests cannot override utility amounts. Admin previews and saves use the same allocation functions. All snapshot and statement writes share the existing InnoDB transaction and serialization lock.
+- Individual and final billing POST requests cannot override utility amounts. Batch billing starts with the same automatic shares, and validates any Admin-edited electricity and water amounts as nonnegative values with at most two decimal places. Snapshot and statement writes share the existing InnoDB transaction and serialization lock.
 
 Review the displayed policy before issuing the first bill. Freezing an entire month early deliberately excludes residents who arrive later; use the existing audited correction workflow for exceptions agreed with the office.
 
@@ -44,7 +44,7 @@ Reviewed authentication/actions, rooms and assignments, individual and batch bil
 
 Actual issues addressed:
 
-1. Individual/batch/final forms accepted arbitrary utility charges. They now calculate fixed shares on the server; billing inputs are read-only estimates and departure uses automatic utilities.
+1. Individual/final forms use fixed shares calculated on the server; batch estimates are prefilled from those shares and Admin can edit them before saving. Departure uses automatic utilities.
 2. Departure could replace previously issued utility amounts. It now preserves them, including legacy charges. Changed allocation/rates invalidate a pending departure preview.
 3. A failed departure re-preview could leave an old confirmation available. Starting a new preview clears the previous one.
 4. Batch estimates included residents whose statements would be skipped. Duplicate/later-period rows are now excluded from the estimated selected total.
@@ -53,7 +53,7 @@ Actual issues addressed:
 7. Room update could report success for a nonexistent room. It now rejects missing room IDs and audits previous/new rate values.
 8. Browser regression runs reused login cookies from a persistent Edge test profile. The suite now clears those cookies before testing the public entry flow.
 
-Admin edits whole-room rates in Rooms & Beds. Payment Staff sees allocated statement charges and retains existing collection permissions; rates and Admin-only actions remain inaccessible. Tenant room details show configured whole-room estimates, clearly distinguished from individual statement shares. Statements explain their allocation without exposing other occupants' identities.
+Fixed whole-room utility values are no longer displayed or editable in Rooms & Beds. Legacy database values remain for existing allocation compatibility. Payment Staff sees statement charges and retains existing collection permissions; rates and Admin-only actions remain inaccessible. Statements explain their saved allocation without exposing other occupants' identities.
 
 ## Changed files for this improvement
 

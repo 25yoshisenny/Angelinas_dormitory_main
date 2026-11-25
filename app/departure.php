@@ -41,7 +41,7 @@ function departure_action(string $action): bool {
     $old=$_SESSION['departure_preview']??null;
     if(!$old) throw new RuntimeException('Prepare a departure preview first.');
     $q=departure_quote($old['tenant'],$old['date'],$old['policy']);
-    if($q!==$old) { unset($_SESSION['departure_preview']); throw new RuntimeException('The resident account changed. Prepare a new preview before confirming.'); }
+    if($q!==$old) { unset($_SESSION['departure_preview']); throw new RuntimeException('The tenant account changed. Prepare a new preview before confirming.'); }
     $reason='Final bill for departure '.$q['date'].'; '.$q['policy'].' rent policy; '.$q['days'].'/'.$q['month_days'].' days.';
     if($q['bill_id']) {
         $id=$q['bill_id'];
@@ -60,7 +60,7 @@ function departure_action(string $action): bool {
     return true;
 }
 function departure_view(): void {
-    echo '<div class="notice">Prepare charges → Review final balance → Confirm departure. Confirmation saves the statement and releases the bed together.</div>';
+    echo '<div class="notice">Prepare charges · Review final balance · Confirm departure. Confirmation saves the statement and releases the bed together.</div>';
     $q=$_SESSION['departure_preview']??null;
     if($q) {
         section_start('Review departure: '.$q['name'],'No changes are saved until you confirm. Existing payments and adjustments are retained.');
@@ -68,16 +68,16 @@ function departure_view(): void {
         $lines=['Departure date'=>$q['date'],'Rent calculation'=>$q['policy']==='daily'?money($q['rate']).' × '.$q['days'].' / '.$q['month_days'].' days':money($q['rate']).' (full month)','Final rent'=>money($q['rent']),'Final water'=>money($q['water']),'Final electricity'=>money($q['electricity']),'Previous balance'=>money($q['previous']),'Existing adjustments / discounts'=>money($q['adjustments']),'Statement total'=>money($q['total']),'Confirmed payments'=>money($q['paid']),'Remaining to collect'=>money($q['balance'])];
         foreach($lines as $label=>$value) echo '<tr><th scope="row">'.e($label).'</th><td>'.e($value).'</td></tr>';
         echo '</tbody></table></div><p class="muted">'.($q['bill_id']?'Updates statement #'.$q['bill_id'].' without creating duplicate monthly charges. Its due date stays unchanged.':'Creates a new final statement due on the departure date.').' Deposits are not automatically applied to rent. Unpaid balances remain collectible after move-out.</p>';
-        form_start('confirm_departure','departure');submit('Confirm final bill & move-out');echo '</section>';
+        form_start('confirm_departure','departure');submit('Confirm final bill & move-out','Complete this departure? The final bill will be saved and the tenant’s bed will be released.');echo '</section>';
     }
     section_start('Prepare final bill','Enter the total utilities for the departure month, including amounts already billed. These replace that month’s utility amounts.');
     $opts=[];foreach(assigned() as $a)$opts[$a['tenant_id']]=$a['name'].' · Room '.$a['number'];
-    if(!$opts){echo '<p class="empty">No currently assigned residents.</p></section>';return;}
+    if(!$opts){echo '<p class="empty">No currently assigned tenants.</p></section>';return;}
     form_start('preview_departure','departure');
-    select_field('Departing resident','tenant_id',$opts,$_GET['tenant_id']??$q['tenant']??'');
+    select_field('Departing tenant','tenant_id',$opts,$_GET['tenant_id']??$q['tenant']??'');
     field('Departure date (inclusive)','move_out','date',$q['date']??date('Y-m-d'),true,'max="'.date('Y-m-d').'"');
     select_field('Approved rent policy','rent_policy',['full'=>'Full monthly rent','daily'=>'Prorate by calendar days occupied'],$q['policy']??'full');
     echo '<p class="form-wide muted">'.e(utility_policy_text()).'</p>';
-    echo '<p class="form-wide muted">Daily proration includes move-in and departure dates, divided by the number of calendar days in the month. It uses the existing statement rent, or the current room rate if no statement exists. Confirm the agreed rent policy with the resident; utilities are calculated automatically.</p>';
+    echo '<p class="form-wide muted">Daily proration includes move-in and departure dates, divided by the number of calendar days in the month. It uses the existing statement rent, or the current room rate if no statement exists. Confirm the agreed rent policy with the tenant; utilities are calculated automatically.</p>';
     submit('Calculate & review');echo '</section>';
 }

@@ -1,0 +1,1018 @@
+:root {
+  color-scheme: dark;
+  --bg: #111215;
+  --ink: #f3eff1;
+  --muted: #aaa1a6;
+  --teal: #c01838;
+  --teal-light: #32171e;
+  --border: #3a282e;
+  --white: #1a1b1f;
+  --nav: #151619;
+  --gold: #d89aa6;
+  --red-primary: #a90f30;
+  --red-accent: #ff3454;
+  --red-glow: rgb(255 52 84 / 18%);
+  --surface: #191a1e;
+  --surface-raised: #202126;
+  --surface-soft: #241a1e;
+}
+
+* {
+  scrollbar-color: #71313f #17181b;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+a {
+  color: #ff7188;
+}
+
+a:hover {
+  color: #ff9bab;
+}
+
+button,
+input,
+select,
+textarea {
+  color: var(--ink);
+}
+
+button,
+.button {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+button:hover,
+.button:hover {
+  border-color: #743241;
+  background: #2a1c21;
+}
+
+.primary,
+.button.primary,
+button.primary,
+.site-button:not(.secondary):not(.light),
+.hero-copy .site-button:not(.secondary) {
+  background: var(--red-primary);
+  border-color: var(--red-primary);
+  color: #fff;
+}
+
+.primary:hover,
+.button.primary:hover,
+button.primary:hover,
+.site-button:not(.secondary):not(.light):hover,
+.hero-copy .site-button:not(.secondary):hover {
+  background: #c2193b;
+  border-color: #e02548;
+  box-shadow: 0 5px 18px var(--red-glow);
+}
+
+.button:focus-visible,
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid #ff617b;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgb(255 52 84 / 12%);
+}
+
+.sidebar {
+  background: #151619;
+  border-color: #33242a;
+  box-shadow: 8px 0 28px rgb(0 0 0 / 16%);
+}
+
+.sidebar .brand,
+.sidebar .profile,
+.sidebar .logout {
+  color: #f4eff1;
+}
+
+.brand-icon,
+.sidebar .brand-icon,
+.site-mark {
+  background: #a90f30;
+  color: #fff;
+  box-shadow: 0 0 16px rgb(255 52 84 / 12%);
+}
+
+.sidebar .brand small,
+.sidebar .profile small,
+.sidebar .logout,
+.nav-heading,
+.sidebar-help {
+  color: #a99ba0;
+}
+
+.sidebar nav a,
+nav a {
+  color: #c0b7bb;
+}
+
+.sidebar nav a:hover,
+nav a:hover {
+  background: #2b1b20;
+  color: #fff;
+}
+
+.sidebar nav a.selected,
+nav a.selected {
+  background: #391821;
+  color: #ffb1bf;
+  box-shadow: inset 3px 0 #ff3454, 0 0 18px rgb(255 52 84 / 7%);
+}
+
+.sidebar .avatar,
+.header-avatar {
+  background: #3a2028;
+  color: #ffb1bf;
+}
+
+.topbar {
+  background: #17181b;
+  border-color: var(--border);
+  color: #d8d1d4;
+}
+
+.breadcrumb,
+.breadcrumb strong,
+.date-label,
+.top-right {
+  color: #b7adb2;
+}
+
+.breadcrumb span,
+.date-label {
+  border-color: #3a282e;
+}
+
+.content,
+.workspace {
+  color: var(--ink);
+}
+
+.page-heading h1,
+.panel h2,
+.welcome-banner h2,
+.stat > strong,
+.commercial-site h2,
+.policy-content h1,
+.policy-content h2 {
+  color: #f4eff1;
+}
+
+.page-heading .eyebrow,
+.page-heading .muted,
+.muted,
+.stat > div,
+.stat > small,
+.panel-heading .muted,
+.content-footer {
+  color: #aaa1a6;
+}
+
+.role-label,
+.chip,
+.table-pager,
+.table-search,
+.section-tabs {
+  background: #1d1e22;
+  border-color: var(--border);
+  color: #c5bcc0;
+}
+
+.welcome-banner {
+  background: linear-gradient(115deg, #28171c, #32181f 58%, #25171b);
+  border-color: #522431;
+  box-shadow: inset 0 0 32px rgb(255 52 84 / 4%);
+}
+
+.welcome-banner .eyebrow,
+.welcome-banner p,
+.welcome-art {
+  color: #d1aab2;
+}
+
+.welcome-art {
+  background: #24191d;
+  border-color: #512732;
+}
+
+.welcome-art svg,
+.stat-icon,
+.home-current-bill .eyebrow,
+.home-detail-grid .eyebrow {
+  color: #ff647e;
+}
+
+.stats .stat,
+.panel,
+.operation-summary > div,
+.quick-links > a,
+.dashboard-notices > a,
+.request-card,
+.announcement-card,
+.activity-item,
+.payment-methods > article,
+.contact-form-card,
+.sample-bill,
+.auth-card {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink);
+  box-shadow: 0 5px 18px rgb(0 0 0 / 14%);
+}
+
+.stat,
+.panel,
+.operation-summary > div,
+.quick-links > a,
+.dashboard-notices > a,
+.request-card,
+.announcement-card,
+.activity-item,
+.payment-methods > article,
+.sample-bill,
+.auth-card {
+  border-radius: 12px;
+}
+
+.stat-icon,
+.quick-links > a > span,
+.feature-symbol {
+  background: #351820 !important;
+  color: #ff6b83 !important;
+}
+
+.chart-column > span,
+.chart-column small,
+.room-progress small,
+th,
+td,
+td small,
+.empty,
+.quick-links small,
+.account-notes,
+.request-card p,
+.announcement-card p,
+.request-card > small,
+.announcement-card > small {
+  color: #b4aaaf;
+}
+
+.bar,
+.progress span,
+.chart-column:last-child .bar,
+.chart-track > div {
+  background: #d31b40;
+}
+
+.bar-track,
+.progress,
+.chart-track {
+  background-color: #302328;
+}
+
+table,
+.table-wrap {
+  color: var(--ink);
+}
+
+th {
+  background: #242126;
+  border-color: #3b2b30;
+}
+
+td {
+  border-color: #30262a;
+}
+
+td strong,
+.quick-links strong,
+.dashboard-notices strong,
+.request-heading h3,
+.announcement-card h3 {
+  color: #f0e9ec;
+}
+
+tbody tr:hover {
+  background: #24191e;
+}
+
+.badge,
+.method {
+  background: #2a2529;
+  color: #d0c6ca;
+}
+
+.badge.paid,
+.badge.active,
+.badge.sent,
+.badge.approved,
+.badge.resolved,
+.badge.normal {
+  background: #351820;
+  color: #ff9aaa;
+}
+
+.badge.partial,
+.badge.held,
+.badge.queued,
+.badge.open,
+.badge.in_progress,
+.badge.pending {
+  background: #34251d;
+  color: #e5b888;
+}
+
+.badge.overdue,
+.badge.failed,
+.badge.disabled,
+.badge.voided,
+.badge.urgent,
+.badge.rejected,
+.badge.cancelled {
+  background: #401b25;
+  color: #ff8799;
+}
+
+.notice {
+  background: #28191e;
+  border-color: #57303a;
+  color: #f0c3cc;
+}
+
+.notice.error {
+  background: #391a22;
+  border-color: #873348;
+  color: #ffabb8;
+}
+
+.danger {
+  background: #351820;
+  border-color: #7d3445;
+  color: #ff9aaa;
+}
+
+input,
+select,
+textarea,
+.table-search,
+.table-toolbar select {
+  background: #17181c;
+  border-color: #413036;
+  color: #f3eff1;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8e858a;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.contact-form-card input:focus,
+.contact-form-card textarea:focus {
+  outline: none;
+  border-color: #d42a49;
+  box-shadow: 0 0 0 3px rgb(255 52 84 / 13%);
+  background: #1b191d;
+}
+
+input[type="checkbox"] {
+  accent-color: #e42549;
+}
+
+select option {
+  background: #1a1b1f;
+  color: #f3eff1;
+}
+
+.bed,
+.bed.occupied,
+.bed-link,
+.bed-link.available,
+.bed-link.occupied {
+  background: #211b20;
+  border-color: #493039;
+}
+
+.bed > span,
+.bed.occupied > span,
+.bed.occupied small {
+  color: #e98295;
+}
+
+.room-card > p,
+.history-row,
+.moveout-section,
+.content-footer,
+.home-bill-lines,
+.home-update {
+  border-color: #3a282e;
+}
+
+.bill-preview,
+.inline-detail,
+.aging-grid > div,
+.database-status,
+.statement-meta,
+.payment-recipient,
+.payment-note,
+.next-steps p,
+.home-next-step,
+#office-payment-panel {
+  background: #211b20 !important;
+  border-color: #493039;
+  color: #d4cbd0;
+}
+
+.bill-preview span,
+.bill-preview p,
+.preview-breakdown,
+.aging-grid span,
+.database-status p,
+.payment-note,
+.next-steps span,
+.home-next-step p,
+.home-update small,
+.operation-summary small {
+  color: #b2a7ad;
+}
+
+.bill-preview strong,
+.aging-grid strong,
+.ledger-total strong,
+.receipt > h1,
+.balance-card > h2 {
+  color: #ff7188;
+}
+
+.attention-banner,
+.pending-callout {
+  background: #30241d;
+  border-color: #58402c;
+  color: #e5c193;
+}
+
+.login-story {
+  background: #1b171b;
+  color: #f3eff1;
+}
+
+.login-story h1,
+.login-card h2 {
+  color: #f4eff1;
+}
+
+.login-story p,
+.login-story footer,
+.login-highlights,
+.login-card > .muted,
+.login-note,
+.login-card label {
+  color: #b8adb2;
+}
+
+.login-form {
+  background: #111215;
+}
+
+.building {
+  background: #311a21;
+  border-color: #542531;
+  box-shadow: 30px 15px 0 #251b20;
+}
+
+.roof,
+.door {
+  background: #8b2038;
+}
+
+.windows {
+  color: #f5e9ec;
+}
+
+.tenant-journey > div {
+  background: #211b20;
+  border-color: #493039;
+  color: #b3a9ae;
+}
+
+.tenant-journey > div.complete,
+.balance-card {
+  background: linear-gradient(120deg, #241a1e, #32191f);
+  border-color: #58303a;
+  color: #f3eff1;
+}
+
+.balance-card > p,
+.next-steps strong,
+.payment-methods ol,
+.payment-recipient,
+.method-title,
+.copy-status {
+  color: #d0aeb6;
+}
+
+.payment-recipient strong,
+.payment-office-entry > summary {
+  color: #ff8195;
+}
+
+.gcash-qr img,
+.payment-recipient img {
+  background: #fff;
+}
+
+.notification-bell {
+  background: #1d1a1e;
+  border-color: #493039;
+  color: #ff7188;
+}
+
+.bell-count {
+  background: #c01838;
+}
+
+.activity-item {
+  color: #f3eff1;
+}
+
+.activity-item.unread {
+  background: #291a20;
+  border-left-color: #ff3454;
+}
+
+.qr-scanner,
+.qr-scanner video,
+.camera-frame {
+  background: #111215;
+  border-color: #493039;
+}
+
+#qr-result,
+.scan-result {
+  background: #201b20;
+  border-color: #493039;
+  color: #eee7ea;
+}
+
+.camera-count strong,
+.scanner-controls button:not(:disabled) {
+  color: #ff7188;
+}
+
+.commercial-site,
+.site-about,
+.site-features,
+.site-steps,
+.site-contact,
+.site-billing,
+.policy-content {
+  background: #111215;
+  color: #f3eff1;
+}
+
+.site-header,
+.site-footer {
+  background: #17181b;
+  border-color: #39282e;
+}
+
+.site-brand,
+.site-brand small,
+.site-header .site-nav a,
+.site-signin,
+.site-footer nav a,
+.footer-bottom {
+  color: #eee7ea;
+}
+
+.site-nav a:hover,
+.site-header .site-nav a:hover,
+.site-text-link,
+.contact-details a,
+.contact-details strong {
+  color: #ff7188;
+}
+
+.site-hero-background {
+  background-image: linear-gradient(90deg, rgb(20 9 13 / 94%), rgb(31 10 17 / 82%) 48%, rgb(33 10 17 / 48%)), url("dorm.jpg");
+  background-position: center 45%;
+  background-size: cover;
+}
+
+.hero-copy h1,
+.hero-copy h1 span,
+.hero-copy > p,
+.hero-copy .site-eyebrow,
+.hero-caption,
+.hero-caption span {
+  color: #fff;
+}
+
+.hero-copy h1 span {
+  color: #ff8da0;
+}
+
+.hero-copy .site-eyebrow i,
+.hero-caption span {
+  background: #ff4966;
+}
+
+.hero-copy .site-button.secondary {
+  background: rgb(20 17 20 / 60%);
+  border-color: #78404c;
+  color: #fff;
+}
+
+.hero-copy .site-button.secondary:hover {
+  background: #321b22;
+  box-shadow: 0 5px 18px var(--red-glow);
+}
+
+.hero-preview {
+  background: rgb(24 22 25 / 88%);
+  border-color: #60303b;
+}
+
+.preview-disclaimer {
+  color: #c3b4ba;
+}
+
+.concept-image-label {
+  background: #1b1115cc;
+  color: #f1dfe4;
+}
+
+.software-preview,
+.preview-window,
+.preview-content,
+.preview-table,
+.preview-metrics > div,
+.preview-avatar {
+  background: #1b1c20;
+  border-color: #3c2a30;
+  color: #f3eff1;
+}
+
+.preview-window {
+  background: #222126;
+}
+
+.preview-sidebar {
+  background: #32151e;
+  color: #e4c4cb;
+}
+
+.preview-monogram,
+.preview-avatar {
+  background: #49202b;
+  color: #ffb1bf;
+}
+
+.preview-nav.active {
+  background: #6d1d31;
+  color: #fff;
+}
+
+.preview-heading h3,
+.preview-table h4,
+.preview-metrics strong {
+  color: #f4e9ec;
+}
+
+.preview-heading small,
+.preview-metrics span,
+.preview-metrics small,
+.preview-table th,
+.preview-table td,
+.preview-table td small,
+.preview-window > small {
+  color: #c0b3b8;
+}
+
+.preview-table th {
+  background: #2a2024;
+}
+
+.preview-paid {
+  background: #4a1d2a;
+  color: #ffb1bf;
+}
+
+.about-preview {
+  padding-bottom: 0;
+  margin-right: 0;
+  max-width: 100%;
+}
+
+.about-dorm-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 285px;
+  object-fit: cover;
+  object-position: center;
+  border: 1px solid #493039;
+  border-radius: 12px;
+  box-shadow: 0 8px 26px rgb(0 0 0 / 24%);
+}
+
+.feature-cards article,
+.sample-bill,
+.contact-form-card {
+  background: #1a1b1f;
+  border-color: #3b2a30;
+}
+
+.feature-cards article:hover,
+.feature-cards article:focus-within {
+  background: #241a1f;
+  border-color: #733142;
+  box-shadow: 0 6px 20px rgb(255 52 84 / 9%);
+}
+
+.feature-cards h3,
+.steps-grid h3,
+.sample-bill-heading h3,
+.sample-bill dd,
+.sample-bill dl .bill-total,
+.commercial-site h2 {
+  color: #f2eaed;
+}
+
+.feature-cards p,
+.steps-grid p,
+.about-copy p,
+.billing-grid > div > p,
+.site-contact > div > p,
+.site-eyebrow,
+.contact-details span,
+.contact-note {
+  color: #b9afb3;
+}
+
+.step-number,
+.sample-bill-heading small,
+.sample-bill dl > div {
+  background: #2b1b20;
+  border-color: #493039;
+  color: #e89baa;
+}
+
+.site-billing {
+  border-color: #39282e;
+}
+
+.sample-bill {
+  box-shadow: 0 6px 22px rgb(0 0 0 / 18%);
+}
+
+.sample-bill-heading,
+.sample-bill dl .bill-total,
+.footer-bottom {
+  border-color: #3b2a30;
+}
+
+.site-cta {
+  background: #781027;
+  border: 1px solid #a72540;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.site-cta p {
+  color: #f1cbd2;
+}
+
+.site-button.light {
+  background: #f6edf0;
+  border-color: #f6edf0;
+  color: #711329;
+}
+
+.contact-details svg {
+  color: #ff7188;
+}
+
+.contact-form-card label {
+  color: #d4c8cd;
+}
+
+.contact-form-card input,
+.contact-form-card textarea {
+  background: #151619;
+  border-color: #413036;
+  color: #f3eff1;
+}
+
+.contact-form-card input::placeholder,
+.contact-form-card textarea::placeholder {
+  color: #8e858a;
+}
+
+.auth-page {
+  background-image: linear-gradient(rgb(15 14 17 / 92%), rgb(15 14 17 / 94%)), url("dorm.jpg");
+  background-position: center;
+  background-size: cover;
+  color: #f3eff1;
+}
+
+.auth-card {
+  background: #1a1b1f;
+  border-color: #493039;
+}
+
+.auth-card .login-card .primary {
+  background: var(--red-primary);
+}
+
+.auth-card .login-card input,
+.auth-card .login-card select {
+  background: #151619;
+  border-color: #413036;
+  color: #f3eff1;
+}
+
+.auth-back,
+.auth-footer,
+.signup-link,
+.policy-content p {
+  color: #b9afb3;
+}
+
+.policy-content h1,
+.policy-content h2 {
+  color: #f3eff1;
+}
+
+.report-chart-grid .panel,
+.report-chart-grid .chart-track {
+  background-color: #1a1b1f;
+}
+
+.chart-legend i {
+  background: #d31b40;
+}
+
+.home-next-step h3 {
+  color: #ff8296;
+}
+
+.section-tabs a[aria-current="page"] {
+  background: #391821;
+  color: #ffb1bf;
+}
+
+.workspace-back {
+  color: #ff8195;
+}
+
+.response-note {
+  background: #28191e;
+  border-left-color: #e72a4c;
+  color: #e2bac3;
+}
+
+.ledger-total {
+  color: #d3aab4;
+}
+
+.database-status .live-dot,
+.live-dot {
+  background: #ff4966;
+}
+
+.business-document {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 26px rgb(0 0 0 / 18%);
+  color: #f3eff1;
+}
+
+.document-header {
+  border-color: #a61936;
+}
+
+.document-brand {
+  background: #a90f30;
+  color: #fff;
+}
+
+.document-header p,
+.document-number small,
+.document-parties > div > span,
+.document-note,
+.document-footer,
+.document-table td,
+.document-table small,
+.scan-result p,
+.scanner-note {
+  color: #c3b9bd;
+}
+
+.document-table th {
+  background: #2a1c21;
+  color: #f3e8eb;
+}
+
+.document-table td,
+.document-footer {
+  border-color: #3a282e;
+}
+
+.document-totals .amount-due {
+  background: #a90f30;
+  color: #fff;
+}
+
+.receipt-amount {
+  background: #28191e;
+  border-color: #57303a;
+  color: #f3eff1;
+}
+
+.receipt-amount strong {
+  color: #ff8195;
+}
+
+.auth-card .login-card h2 {
+  color: #f3eff1;
+}
+
+.auth-card .login-card label {
+  color: #d0c6ca;
+}
+
+.auth-card .signup-link {
+  color: #b9afb3;
+}
+
+@media (max-width: 800px) {
+  .about-dorm-image {
+    height: 290px;
+  }
+}
+
+@media (max-width: 520px) {
+  .site-hero-background {
+    background-image: linear-gradient(rgb(15 10 13 / 90%), rgb(20 10 14 / 82%)), url("dorm.jpg");
+  }
+
+  .about-dorm-image {
+    height: 245px;
+  }
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  .content,
+  .workspace,
+  .panel,
+  .stat {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .business-document {
+    background: #fff !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    color: #243b34 !important;
+  }
+
+  .business-document .document-header p,
+  .business-document .document-number small,
+  .business-document .document-parties > div > span,
+  .business-document .document-note,
+  .business-document .document-footer,
+  .business-document .document-table td,
+  .business-document .document-table small {
+    color: #243b34 !important;
+  }
+
+  .business-document .document-table th {
+    background: #f1e8eb !important;
+    color: #38252b !important;
+  }
+
+  .business-document .document-totals .amount-due {
+    background: #a90f30 !important;
+    color: #fff !important;
+  }
+}

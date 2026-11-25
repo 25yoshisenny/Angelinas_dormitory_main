@@ -6,11 +6,50 @@ function period_input(): string {
 }
 function parse_amount($value): int {
     $value=trim((string)$value);
-    if(!preg_match('/^\d{1,8}(\.\d{1,2})?$/',$value)) throw new RuntimeException('Use positive amounts with at most two decimal places.');
+    if(!preg_match('/^\d{1,8}(\.\d{1,2})?$/',$value)) throw new RuntimeException('Use nonnegative amounts with at most two decimal places.');
     return (int)round((float)$value*100);
 }
-function create_statement(int $tenant,string $period,string $cutoff,string $due,int $rent,int $discount=0,int $adjustment=0,string $discountReason='',string $adjustmentReason=''): int {
-    $u=require_role(['admin']);
+function monthly_batch_preview(int $roomId,string $period,?array $utilityTotals=null): array {
+    utility_period($period);
+    $room=one("SELECT id,number,rent FROM rooms WHERE id=? AND status='active'",[$roomId]);
+    if(!$room) throw new RuntimeException('Choose an active room for this billing run.');
+    $snapshot=utility_snapshot($period,false,$roomId,$utilityTotals);
+    $snapshotRoom=$snapshot['rooms'][(string)$roomId]??['electricity'=>0,'water'=>0,'legacy'=>true];
+    $locked=(bool)one('SELECT b.id FROM billing b JOIN tenant_assignments a ON a.id=b.assignment_id JOIN bed_spaces bs ON bs.id=a.bed_id WHERE b.period=? AND bs.room_id=? LIMIT 1',[$period,$roomId]);
+    $tenants=[];
+    foreach(rows("SELECT a.id assignment_id,a.tenant_id,a.start_date,t.name,b.label,r.rent FROM tenant_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN bed_spaces b ON b.id=a.bed_id JOIN rooms r ON r.id=b.room_id WHERE a.end_date IS NULL AND t.status='active' AND r.id=? ORDER BY t.name,a.tenant_id",[$roomId]) as $tenant) {
+        $id=(int)$tenant['tenant_id'];$share=utility_share_from_snapshot($id,$snapshot);
+        $old=rows('SELECT b.*,COALESCE((SELECT SUM(amount) FROM payments WHERE billing_id=b.id AND voided_at IS NULL),0) paid FROM billing b WHERE tenant_id=? AND carried_to IS NULL',[$id]);
+        $previous=array_sum(array_map('balance',$old));
+        $latest=one('SELECT MAX(period) period FROM billing WHERE tenant_id=?',[$id]);
+        $pending=one("SELECT id FROM payment_submissions WHERE tenant_id=? AND status='pending' LIMIT 1",[$id]);
+        $reason='';
+        if($latest['period']!==null && $latest['period']>=$period) $reason=$latest['period']===$period?'Already billed for this period.':'A later billing period already exists.';
+        elseif($period<substr($tenant['start_date'],0,7)) $reason='Tenant moved in after this billing month.';
+        elseif($pending) $reason='A payment submission is awaiting verification.';
+        $electricity=(int)$share['electricity'];$water=(int)$share['water'];$rent=(int)$tenant['rent'];
+        $tenants[]=['tenant_id'=>$id,'name'=>$tenant['name'],'bed'=>$tenant['label'],'rent'=>$rent,'electricity'=>$electricity,'water'=>$water,'previous'=>$previous,'total'=>$rent+$electricity+$water+$previous,'eligible'=>$reason==='','reason'=>$reason];
+    }
+    return ['room'=>['id'=>(int)$room['id'],'number'=>$room['number'],'utilities'=>(int)$snapshotRoom['electricity']+(int)$snapshotRoom['water'],'utility_locked'=>$locked||$snapshotRoom['legacy']],'period'=>$period,'tenants'=>$tenants,'total'=>array_sum(array_map(fn($tenant)=>$tenant['eligible']?$tenant['total']:0,$tenants))];
+}
+function monthly_batch_preview_response(): never {
+    require_role(['admin','staff']);
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        $roomId=filter_var($_GET['room_id']??null,FILTER_VALIDATE_INT);
+        if(!$roomId || $roomId<1) throw new RuntimeException('Choose a valid room.');
+        $totals=null;
+        if(array_key_exists('room_utilities',$_GET)) {
+            if(!is_scalar($_GET['room_utilities'])) throw new RuntimeException('Enter a valid room utilities total.');
+            $totals=['total'=>parse_amount($_GET['room_utilities'])];
+        }
+        $preview=monthly_batch_preview((int)$roomId,(string)($_GET['period']??''),$totals);
+        echo json_encode($preview,JSON_THROW_ON_ERROR);
+    } catch(RuntimeException $error) { http_response_code(422);echo json_encode(['error'=>$error->getMessage()]); }
+    exit;
+}
+function create_statement(int $tenant,string $period,string $cutoff,string $due,int $rent,int $discount=0,int $adjustment=0,string $discountReason='',string $adjustmentReason='',?array $utilityOverrides=null): int {
+    $u=require_role(['admin','staff']);
     $a=one('SELECT * FROM tenant_assignments WHERE tenant_id=? AND end_date IS NULL',[$tenant]);
     if(!$a) throw new RuntimeException('Only actively assigned tenants can receive new monthly bills.');
     if(one("SELECT id FROM payment_submissions WHERE tenant_id=? AND status='pending'",[$tenant])) throw new RuntimeException('Review this tenant’s pending payment submissions before generating the next bill.');
@@ -18,7 +57,7 @@ function create_statement(int $tenant,string $period,string $cutoff,string $due,
     if($period<substr($a['start_date'],0,7)) throw new RuntimeException('Billing period cannot be before this stay began.');
     $latest=one('SELECT period FROM billing WHERE tenant_id=? ORDER BY period DESC LIMIT 1',[$tenant]);
     if($latest && $period<=$latest['period']) throw new RuntimeException('Use a new billing period after the latest existing period.');
-    $share=utility_share($tenant,$period,true);$electricity=$share['electricity'];$water=$share['water'];
+    $share=utility_share($tenant,$period,true);$electricity=$utilityOverrides['electricity']??$share['electricity'];$water=$utilityOverrides['water']??$share['water'];
     $old=rows('SELECT b.*,COALESCE((SELECT SUM(amount) FROM payments WHERE billing_id=b.id AND voided_at IS NULL),0) paid FROM billing b WHERE tenant_id=? AND carried_to IS NULL',[$tenant]);
     $prev=array_sum(array_map('balance',$old)); $total=$rent+$electricity+$water+$prev-$discount+$adjustment;
     if($total<0) throw new RuntimeException('Discounts cannot exceed charges and previous balance.');
@@ -34,18 +73,25 @@ function create_statement(int $tenant,string $period,string $cutoff,string $due,
 }
 function feature_action(string $action,array $u): bool {
     if(departure_action($action)) return true;
+    if(qr_management_action($action,$u)) return true;
     switch($action) {
     case 'batch_billing':
-        require_role(['admin']); $period=period_input(); $cutoff=date_input('cutoff'); $due=date_input('due_date');
+        require_role(['admin','staff']); $roomId=(int)required('room_id'); $period=period_input(); $cutoff=date_input('cutoff'); $due=date_input('due_date');
+        if(!one("SELECT id FROM rooms WHERE id=? AND status='active' FOR UPDATE",[$roomId])) throw new RuntimeException('Choose an active room for this billing run.');
         if($due<$cutoff) throw new RuntimeException('Due date must be on or after cutoff.');
-        $selected=$_POST['selected']??[]; if(!is_array($selected)||!$selected) throw new RuntimeException('Select at least one resident to bill.');
+        $selected=$_POST['selected']??[]; if(!is_array($selected)||!$selected) throw new RuntimeException('Select at least one tenant to bill.');
+        $utilityTotals=['total'=>cents('room_utilities')];
+        $discount=cents('discount');
+        $discountReason=trim($_POST['discount_reason']??'');
+        if($discount>0 && $discountReason==='') throw new RuntimeException('Please provide a discount reason.');
+        utility_snapshot($period,true,$roomId,$utilityTotals);
         $count=0; $skipped=0;
         foreach(array_unique(array_map('intval',$selected)) as $tenant) {
-            $a=one('SELECT a.*,r.rent FROM tenant_assignments a JOIN bed_spaces b ON b.id=a.bed_id JOIN rooms r ON r.id=b.room_id WHERE a.tenant_id=? AND a.end_date IS NULL',[$tenant]);
-            if(!$a) throw new RuntimeException('A selected tenant is no longer active. Reload the batch.');
+            $a=one("SELECT a.*,r.rent,r.id room_id,t.status tenant_status FROM tenant_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN bed_spaces b ON b.id=a.bed_id JOIN rooms r ON r.id=b.room_id WHERE a.tenant_id=? AND a.end_date IS NULL FOR UPDATE",[$tenant]);
+            if(!$a || $a['tenant_status']!=='active' || (int)$a['room_id']!==$roomId) throw new RuntimeException('A selected tenant is not actively assigned to this room. Reload the billing run.');
             $last=one('SELECT period FROM billing WHERE tenant_id=? ORDER BY period DESC LIMIT 1',[$tenant]);
-            if($last && $last['period']>=$period) { $skipped++; continue; }
-            create_statement($tenant,$period,$cutoff,$due,(int)$a['rent']); $count++;
+            if(($last && $last['period']>=$period) || $period<substr($a['start_date'],0,7) || one("SELECT id FROM payment_submissions WHERE tenant_id=? AND status='pending' LIMIT 1",[$tenant])) { $skipped++; continue; }
+            create_statement($tenant,$period,$cutoff,$due,(int)$a['rent'],$discount,discountReason:$discountReason); $count++;
         }
         audit('Generated monthly billing batch','billing',null,"$count created; $skipped skipped (existing/newer statements).");
         $_SESSION['action_message']="$count statements created. $skipped skipped because they already have this or a later billing period."; return true;

@@ -10,6 +10,9 @@ import json
 import uuid
 import datetime
 import base64
+import hashlib
+import hmac
+import struct
 import subprocess
 import tempfile
 import time
@@ -17,10 +20,22 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 BASE = 'http://localhost:8081/'
 PHP = r'C:\xampp\php\php.exe'
+ADMIN_TOTP_SECRETS = {}
+
+def totp_code(secret, counter_offset=0):
+    key = base64.b32decode(secret.upper() + '=' * ((8-len(secret) % 8) % 8))
+    counter = int(time.time() // 30) + counter_offset
+    digest = hmac.new(key, struct.pack('>Q', counter), hashlib.sha1).digest()
+    offset = digest[-1] & 15
+    value = int.from_bytes(digest[offset:offset+4], 'big') & 0x7fffffff
+    return f'{value % 1000000:06d}'
 
 class Client:
     def __init__(self):
-        self.opener = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.cookie_jar = http.cookiejar.CookieJar()
+        self.opener = build_opener(HTTPCookieProcessor(self.cookie_jar))
+    def session_id(self):
+        return next((cookie.value for cookie in self.cookie_jar if cookie.name=='PHPSESSID'),None)
     def get(self, path=''):
         try:
             with self.opener.open(BASE + path) as r:
@@ -33,14 +48,29 @@ class Client:
         assert token, (page, status, html[:300])
         payload = {'csrf': token[1], 'action': action, 'return_page': page, **data}
         try:
-            with self.opener.open(Request(BASE+'index.php', urlencode(payload).encode())) as r:
+            with self.opener.open(Request(BASE+'index.php', urlencode(payload,doseq=True).encode())) as r:
                 html = r.read().decode()
                 assert 'Warning:' not in html and 'Fatal error' not in html, html[:400]
                 return html
         except HTTPError as e:
             return e.read().decode()
-    def login(self, role, password):
-        return self.post('login', 'login', username=role, role=role, password=password)
+    def login(self, role, password, username=None):
+        global ADMIN_TOTP_SECRETS
+        usernames = {'admin':'admin','staff':'staff','tenant':'tenant'}
+        login_name=username or usernames[role]
+        secret_key='admin' if login_name in ('admin','admin@angelinasdormitory.test') else login_name
+        html = self.post('login', 'login', username=login_name, password=password)
+        if role != 'admin':
+            return html
+        if 'Connect Google Authenticator' in html:
+            match = re.search(r'class="two-factor-secret">([^<]+)</code>', html)
+            assert match, html[:400]
+            ADMIN_TOTP_SECRETS[secret_key] = match[1]
+            return self.post('confirm_admin_2fa_setup','security',code=totp_code(ADMIN_TOTP_SECRETS[secret_key]))
+        if 'Verify your sign-in' in html:
+            assert secret_key in ADMIN_TOTP_SECRETS, html[:400]
+            return self.post('verify_admin_otp','otp',code=totp_code(ADMIN_TOTP_SECRETS[secret_key]))
+        return html
     def upload(self, action, page, filename, content, upload_field="proof", **data):
         code, html = self.get('index.php?page='+page)
         token = re.search(r'name="csrf" value="([^"]+)"', html)[1]
@@ -53,6 +83,17 @@ class Client:
         body += ('--'+boundary+'--\r\n').encode()
         with self.opener.open(Request(BASE+'index.php',body,{'Content-Type':'multipart/form-data; boundary='+boundary})) as r:
             return r.read().decode()
+
+def scan_tenant_qr(client, payload):
+    _, html = client.get('index.php?page=dashboard')
+    csrf = re.search(r'name="csrf" value="([^"]+)"', html)
+    assert csrf, html[:300]
+    request = Request(BASE+'index.php?tenant_qr_lookup=1', urlencode({'csrf':csrf[1],'token':payload}).encode(), {'Content-Type':'application/x-www-form-urlencoded'})
+    try:
+        with client.opener.open(request) as response:
+            return response.status, json.loads(response.read().decode())
+    except HTTPError as error:
+        return error.code, json.loads(error.read().decode())
 
 class MysqlTestDatabase:
     def __init__(self, env):
@@ -71,11 +112,11 @@ class MysqlTestDatabase:
 
 with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as temp:
     dbname = 'angelinas_test_' + uuid.uuid4().hex[:12]
-    env = {**os.environ, 'DORMITORY_DB_NAME':dbname}
+    env = {**os.environ, 'DORMITORY_DB_NAME':dbname, 'DORMITORY_TOTP_ENCRYPTION_KEY':base64.b64encode(os.urandom(32)).decode()}
     subprocess.run([PHP,'database/setup.php'],cwd=ROOT,env=env,check=True,capture_output=True,text=True)
     log = open(Path(temp)/'server.log','w+')
     server = subprocess.Popen([PHP,'-d','upload_tmp_dir='+temp,'-S','localhost:8081','router.php'],cwd=ROOT,env=env,stdout=log,stderr=log,creationflags=subprocess.CREATE_NO_WINDOW)
-    con = None
+    con = MysqlTestDatabase(env)
     try:
         admin = Client()
         for attempt in range(30):
@@ -85,21 +126,127 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
             except OSError: pass
             time.sleep(.1)
         assert 'Manage Your Dormitory' in html
+        con.execute("UPDATE users SET email=NULL WHERE role IN ('admin','staff')")
+        subprocess.run([PHP,'database/setup.php'],cwd=ROOT,env=env,check=True,capture_output=True,text=True)
+        assert con.execute('SELECT role,email FROM users WHERE username=?',['admin']).fetchone()==('admin','admin@angelinasdormitory.test')
+        assert con.execute('SELECT role,email FROM users WHERE username=?',['staff']).fetchone()==('staff','staff@angelinasdormitory.test')
+        login_page=admin.get('index.php?page=login')[1]
+        assert 'name="username"' in login_page and 'name="role"' not in login_page
+        assert 'Username or Admin email' in login_page
         assert 'incorrect' in admin.login('admin','wrong-password')
-        assert 'Set a new personal password' in admin.login('admin','Admin@12345')
+        setup_page=admin.post('login','login',username='admin',password='Admin@12345')
+        assert 'Connect Google Authenticator' in setup_page and 'data:image/svg+xml;base64,' in setup_page
+        setup_secret=re.search(r'class="two-factor-secret">([^<]+)</code>',setup_page)
+        assert setup_secret, setup_page[:400]
+        ADMIN_TOTP_SECRETS['admin']=setup_secret[1]
+        blocked=admin.get('index.php?page=dashboard')[1]
+        assert 'Sign in to your account' in blocked and 'welcome-banner' not in blocked
+        assert 'incorrect' in admin.post('confirm_admin_2fa_setup','security',code='bad-code')
+        enrollment=admin.post('confirm_admin_2fa_setup','security',code=totp_code(ADMIN_TOTP_SECRETS['admin']))
+        assert 'Set a new personal password' in enrollment
+        encrypted_secret=con.execute('SELECT secret_ciphertext FROM admin_two_factor WHERE user_id=(SELECT id FROM users WHERE username=?)',['admin']).fetchone()[0]
+        assert encrypted_secret and ADMIN_TOTP_SECRETS['admin'] not in encrypted_secret
         assert 'at least 10' in admin.post('password','account', current_password='Admin@12345',new_password='short',confirm_password='short')
         admin.post('password','account',current_password='Admin@12345',new_password='AdminTesting@2026',confirm_password='AdminTesting@2026')
-        for page in ['dashboard','tenants','rooms','billing','payments','deposits','occupancy','notifications','audit','accounts','account','statement&id=1','batch','reports','expenses','requests','announcements','settings','ledger']:
+        security=admin.get('index.php?page=security')[1]
+        recovery_match=re.search(r'class="recovery-codes">([^<]+)</code>',security)
+        assert recovery_match and 'Generate new recovery codes' in security
+        recovery_codes=recovery_match[1].strip().splitlines()
+        assert len(recovery_codes)==10
+        recovery_code=recovery_codes[0]
+        assert 'recovery-codes' not in admin.get('index.php?page=security')[1]
+        pending_admin=Client()
+        pending_admin.get('index.php?page=login')
+        before_password_session=pending_admin.session_id()
+        challenge_page=pending_admin.post('login','login',username='admin',password='AdminTesting@2026')
+        assert 'Verify your sign-in' in challenge_page
+        assert pending_admin.session_id()!=before_password_session
+        blocked=pending_admin.get('index.php?page=dashboard')[1]
+        assert 'Sign in to your account' in blocked and 'welcome-banner' not in blocked
+        for protected in ['tenants','rooms','billing','payments','deposits','qr_management','occupancy','notifications','audit','accounts','security','batch','reports','expenses','requests','announcements','settings','ledger']:
+            blocked=pending_admin.get('index.php?page='+protected)[1]
+            assert 'Sign in to your account' in blocked and 'welcome-banner' not in blocked, protected
+        for protected in ['proof=1','payment_qr=1','export=1','utility_preview=1','batch_preview=1&room_id=1&period=2027-01','activity_poll=1']:
+            status,blocked=pending_admin.get('index.php?'+protected)
+            assert status in (200,403) and 'welcome-banner' not in blocked, protected
+        wrong_secret=base64.b32encode(os.urandom(20)).decode().rstrip('=')
+        wrong_otp=totp_code(wrong_secret)
+        while wrong_otp in [totp_code(ADMIN_TOTP_SECRETS['admin']),totp_code(ADMIN_TOTP_SECRETS['admin'],1)]:
+            wrong_secret=base64.b32encode(os.urandom(20)).decode().rstrip('=')
+            wrong_otp=totp_code(wrong_secret)
+        assert 'incorrect' in pending_admin.post('verify_admin_otp','otp',code=wrong_otp)
+        assert 'incorrect' in pending_admin.post('verify_admin_otp','otp',code=totp_code(ADMIN_TOTP_SECRETS['admin'],-2))
+        login_otp=totp_code(ADMIN_TOTP_SECRETS['admin'],1)
+        before_otp_session=pending_admin.session_id()
+        assert 'welcome-banner' in pending_admin.post('verify_admin_otp','otp',code=login_otp)
+        assert pending_admin.session_id()!=before_otp_session
+        replay_admin=Client()
+        assert 'Verify your sign-in' in replay_admin.post('login','login',username='admin',password='AdminTesting@2026')
+        assert 'incorrect' in replay_admin.post('verify_admin_otp','otp',code=login_otp)
+        assert 'welcome-banner' in replay_admin.post('verify_admin_otp','otp',code=recovery_code)
+        assert con.execute('SELECT used_at FROM admin_two_factor_recovery WHERE user_id=(SELECT id FROM users WHERE username=?) AND code_hash=?',['admin',hashlib.sha256(recovery_code.replace('-','').lower().encode()).hexdigest()]).fetchone()[0] is not None
+        recovery_replay=Client()
+        assert 'Verify your sign-in' in recovery_replay.post('login','login',username='admin',password='AdminTesting@2026')
+        assert 'incorrect' in recovery_replay.post('verify_admin_otp','otp',code=recovery_code)
+        email_admin=Client()
+        assert 'Verify your sign-in' in email_admin.post('login','login',username='admin@angelinasdormitory.test',password='AdminTesting@2026')
+        assert 'welcome-banner' in email_admin.post('verify_admin_otp','otp',code=recovery_codes[1])
+        logout_admin=Client()
+        assert 'Verify your sign-in' in logout_admin.post('login','login',username='admin',password='AdminTesting@2026')
+        assert 'welcome-banner' in logout_admin.post('verify_admin_otp','otp',code=recovery_codes[4])
+        logout_admin.post('logout','dashboard')
+        assert 'Sign in to your account' in logout_admin.get('index.php?page=dashboard')[1]
+        locked_admin=Client()
+        assert 'Verify your sign-in' in locked_admin.post('login','login',username='admin',password='AdminTesting@2026')
+        admin_id=con.execute('SELECT id FROM users WHERE username=?',['admin']).fetchone()[0]
+        con.execute('INSERT INTO admin_two_factor_attempts(user_id,identity,attempted_at) VALUES(?,?,?),(?,?,?),(?,?,?),(?,?,?),(?,?,?)',[
+            admin_id,'a'*64,int(time.time()),admin_id,'b'*64,int(time.time()),admin_id,'c'*64,int(time.time()),admin_id,'d'*64,int(time.time()),admin_id,'e'*64,int(time.time())])
+        assert 'Too many verification attempts' in locked_admin.post('verify_admin_otp','otp',code=totp_code(ADMIN_TOTP_SECRETS['admin']))
+        con.execute('DELETE FROM admin_two_factor_attempts WHERE user_id=?',[admin_id])
+        staff_login=Client()
+        staff_page=staff_login.login('staff','Staff@12345')
+        assert 'Set a new personal password' in staff_page and 'Verify your sign-in' not in staff_page
+        assert 'Saved successfully' in admin.post('staff','accounts',name='Managed Staff',email='managed.staff@example.com',username='managed.staff',role='staff',temporary_password='ManagedStaff@2026')
+        managed_staff_id=con.execute('SELECT id FROM users WHERE username=?',['managed.staff']).fetchone()[0]
+        assert 'Saved successfully' in admin.post('account_username','accounts',user_id=managed_staff_id,username='managed.staff.updated')
+        assert con.execute('SELECT username FROM users WHERE id=?',[managed_staff_id]).fetchone()==('managed.staff.updated',)
+        assert 'already taken' in admin.post('account_username','accounts',user_id=managed_staff_id,username='admin')
+        assert '3–50 characters' in admin.post('account_username','accounts',user_id=managed_staff_id,username='bad username')
+        assert 'Update username' in admin.get('index.php?page=accounts')[1]
+        managed=Client()
+        assert 'Set a new personal password' in managed.login('staff','ManagedStaff@2026','managed.staff.updated')
+        for page in ['dashboard','tenants','rooms','billing','payments','deposits','qr_management','notifications','audit','accounts','account','statement&id=1','batch','reports','expenses','requests','announcements','settings','ledger']:
             code, html = admin.get('index.php?page='+page)
             assert code == 200 and 'Warning:' not in html and 'Fatal error' not in html, (page,code,html[:200])
+        code, occupancy_page = admin.get('index.php?page=occupancy')
+        assert code == 403 and 'Room occupancy camera' not in occupancy_page
+        rooms_page = admin.get('index.php?page=rooms')[1]
+        assert all(label not in rooms_page for label in ['Occupancy Checks','Room occupancy camera','start-camera'])
+        assert 'Unknown action.' in admin.post('scan','rooms',room_id=2,detected_count=4,source='manual',notes='Verify count')
+        assert con.execute('SELECT COUNT(*) FROM occupancy_scans').fetchone()==(0,)
         html=admin.get('index.php?page=dashboard')[1]
-        assert all(label in html for label in ['Collected this month','Outstanding balance','Overdue statements','Pending payments','Active residents','Occupied beds','Available beds','Occupancy rate'])
+        assert all(label in html for label in ['Collected this month','Outstanding balance','Overdue statements','Pending payments','Active tenants','Occupied beds','Available beds','Occupancy rate'])
         for page,selected in [('batch','billing'),('expenses','reports'),('ledger','reports'),('notifications','settings')]:
             body=admin.get('index.php?page='+page)[1]
             assert re.search(r'class="selected" href="\?page='+selected+r'"',body),page
         directory=admin.get('index.php?page=tenants')[1]
         assert all(label in directory for label in ['Current balance','Payment status','Move-in date','Billing History'])
-        con = MysqlTestDatabase(env)
+        staff_id=con.execute('SELECT id FROM users WHERE username=?',['staff']).fetchone()[0]
+        con.execute('UPDATE users SET email=NULL WHERE id=?',[staff_id])
+        legacy_staff=Client()
+        assert 'Set a new personal password' in legacy_staff.login('staff','Staff@12345',username='staff')
+        assert 'Saved successfully' in admin.post('account_email','accounts',user_id=staff_id,email='payment.staff@example.com')
+        assert con.execute('SELECT email FROM users WHERE id=?',[staff_id]).fetchone()==('payment.staff@example.com',)
+        assert 'Saved successfully' in admin.post('staff','accounts',name='Managed Admin',email='managed.admin@example.com',username='managed.admin',role='admin',temporary_password='ManagedAdmin@2026')
+        assert con.execute('SELECT role,email FROM users WHERE username=?',['managed.admin']).fetchone()==('admin','managed.admin@example.com')
+        managed_admin=Client()
+        assert 'Set a new personal password' in managed_admin.login('admin','ManagedAdmin@2026','managed.admin')
+        managed_admin.post('password','account',current_password='ManagedAdmin@2026',new_password='ManagedAdminChanged@2026',confirm_password='ManagedAdminChanged@2026')
+        assert managed_admin.get('index.php?page=accounts')[0]==200
+        assert con.execute('SELECT role,email FROM users WHERE username=?',['managed.staff.updated']).fetchone()==('staff','managed.staff@example.com')
+        managed.post('password','account',current_password='ManagedStaff@2026',new_password='ManagedStaffChanged@2026',confirm_password='ManagedStaffChanged@2026')
+        assert managed.get('index.php?page=dashboard')[0]==200
+        assert managed.get('index.php?page=accounts')[0]==403
         visitor=Client()
         assert 'Manage Your Dormitory' in visitor.get()[1]
         assert visitor.get('index.php?page=privacy')[0]==200
@@ -144,8 +291,12 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'Paid' in admin.get('index.php?page=statement&id=2')[1]
         html=admin.post('adjust_bill','billing',billing_id=2,type='discount',amount='1',reason='Invalid below paid')
         assert 'less than payments' in html
-        staff=Client(); staff.login('staff','Staff@12345'); staff.post('password','account',current_password='Staff@12345',new_password='StaffTesting@2026',confirm_password='StaffTesting@2026')
+        staff=Client(); staff.login('staff','Staff@12345','staff'); staff.post('password','account',current_password='Staff@12345',new_password='StaffTesting@2026',confirm_password='StaffTesting@2026')
         assert staff.get('index.php?page=tenants')[0]==403
+        assert staff.get('index.php?page=batch')[0]==200
+        assert 'Monthly Billing Run' in staff.get('index.php?page=dashboard')[1]
+        room_page=staff.get('index.php?page=rooms')
+        assert room_page[0]==200 and 'Room 101' in room_page[1] and 'Create room' not in room_page[1] and 'Save room settings' not in room_page[1]
         assert 'do not have access' in staff.post('room','payments',number='BLOCKED',capacity=4,rent=1000)
         tenant=Client(); tenant.login('tenant','Tenant@12345'); tenant.post('password','account',current_password='Tenant@12345',new_password='TenantTesting@2026',confirm_password='TenantTesting@2026')
         assert tenant.get('index.php?page=accounts')[0]==403
@@ -170,23 +321,39 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert '₱500.00' in admin.get('index.php?page=reports')[1]
         assert "'=SUM(1,2)" in admin.get('index.php?export=expenses')[1]
         assert tenant.get('index.php?export=collections')[0]==403
-        admin.post('scan','occupancy',room_id=2,detected_count=4,source='manual',notes='Verify count')
-        assert con.execute('SELECT detected_count,registered_count,capacity FROM occupancy_scans').fetchone()==(4,1,6)
         admin.post('moveout','tenants',tenant_id=1,move_out=today)
         assert con.execute('SELECT status FROM tenants WHERE id=1').fetchone()[0]=='moved_out'
         assert con.execute('SELECT COUNT(*) FROM tenant_assignments WHERE end_date IS NULL').fetchone()[0]==0
         admin.post('refund','deposits',deposit_id=1,refund_amount=4500,refunded_date=today,deduction_reason='500 cleaning deduction')
         assert con.execute('SELECT refund_amount FROM deposits WHERE id=1').fetchone()[0]==450000
-        new_registration=dict(name='Another Tenant',email='other@example.com',contact='09170000001',move_in=today,bed_id=5,username='another',temporary_password='OtherTesting@2026',confirm_password='OtherTesting@2026')
+        registration_room=con.execute('SELECT room_id FROM bed_spaces WHERE id=?',[5]).fetchone()[0]
+        registration_page=admin.get('index.php?page=tenants')[1]
+        assert 'Available Room' in registration_page and 'Available Bed' in registration_page
+        available=json.loads(admin.get('index.php?tenant_beds=1&room_id='+str(registration_room))[1])
+        assert 5 in {int(bed['id']) for bed in available['beds']}
+        new_registration=dict(name='Another Tenant',email='other@example.com',contact='09170000001',move_in=today,room_id=registration_room,bed_id=5,username='another',temporary_password='OtherTesting@2026',confirm_password='OtherTesting@2026')
         assert 'do not match' in admin.post('tenant','accounts',**{**new_registration,'confirm_password':'Different@2026'})
         assert con.execute('SELECT COUNT(*) FROM tenants').fetchone()[0]==1
         assert 'already taken' in admin.post('tenant','accounts',**{**new_registration,'username':'admin'})
         assert '3–50 characters' in admin.post('tenant','accounts',**{**new_registration,'username':'bad username'})
         assert 'do not have access' in staff.post('tenant','payments',**new_registration)
         assert 'do not have access' in tenant.post('tenant_account','billing',tenant_id=1,username='blocked',temporary_password='BlockedTesting@2026',confirm_password='BlockedTesting@2026')
+        other_room=con.execute('SELECT id FROM rooms WHERE id<>? AND status=? LIMIT 1',[registration_room,'active']).fetchone()[0]
+        assert 'selected room' in admin.post('tenant','accounts',**{**new_registration,'room_id':other_room,'username':'wrong.room','email':'wrong.room@example.com'})
         assert 'Tenant registered and account created' in admin.post('tenant','accounts',**new_registration)
         assert con.execute('SELECT COUNT(*) FROM tenants').fetchone()[0]==2
-        other=Client(); other.post('login','login',username='another',role='tenant',password='OtherTesting@2026'); other.post('password','account',current_password='OtherTesting@2026',new_password='OtherChanged@2026',confirm_password='OtherChanged@2026')
+        batch_page=admin.get('index.php?page=batch')[1]
+        assert 'Select Room to Bill' in batch_page and 'Discount per tenant' in batch_page and 'Room utilities total (electricity + water' in batch_page
+        assert 'Create a monthly statement' not in admin.get('index.php?page=billing')[1]
+        batch_preview=json.loads(admin.get('index.php?batch_preview=1&room_id='+str(registration_room)+'&period='+nxt)[1])
+        assert {tenant['tenant_id'] for tenant in batch_preview['tenants']}=={2}
+        assert batch_preview['room']['id']==registration_room
+        batch_utilities=f"{batch_preview['room']['utilities']/100:.2f}"
+        refreshed=json.loads(admin.get('index.php?tenant_beds=1&room_id='+str(registration_room))[1])
+        assert 5 not in {int(bed['id']) for bed in refreshed['beds']}
+        assert 'no longer available' in admin.post('tenant','accounts',**{**new_registration,'username':'duplicate.bed','email':'duplicate.bed@example.com'})
+        assert con.execute('SELECT COUNT(*) FROM tenants').fetchone()[0]==2
+        other=Client(); other.post('login','login',username='another',password='OtherTesting@2026'); other.post('password','account',current_password='OtherTesting@2026',new_password='OtherChanged@2026',confirm_password='OtherChanged@2026')
         assert other.get('index.php?page=statement&id=1')[0]==404
         assert other.get('index.php?page=receipt&id=1')[0]==404
         assert 'Maria Santos' not in other.get('index.php?page=billing')[1]
@@ -208,11 +375,16 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'AD-6' in admin.get('index.php?export=collections')[1]
         admin.post('settings','settings',business_name='Test Residence',business_contact='09170000000',business_address='Test street',cutoff_day=15,due_day=31)
         assert 'Test Residence' in other.get('index.php?page=receipt&id=6')[1]
-        html=admin.post('batch_billing','batch',period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',**{'selected[]':2,'electricity[2]':'125.50','water[2]':'80'})
+        html=admin.post('batch_billing','batch',room_id=registration_room,period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',**{'selected[]':2,'room_utilities':'invalid','discount':'0'})
+        assert 'valid amount for room utilities' in html
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=2 AND period=?',[nxt]).fetchone()[0]==0
+        html=admin.post('batch_billing','batch',room_id=registration_room,period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',**{'selected[]':2,'room_utilities':batch_utilities,'discount':'100','discount_reason':'Room promotion'})
         assert '1 statements created' in html
         newbill=con.execute('SELECT previous_balance,total_due,electricity,water FROM billing WHERE tenant_id=2 AND period=?',[nxt]).fetchone()
-        assert newbill==(400000,900000,0,0),newbill
-        html=admin.post('batch_billing','batch',period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',**{'selected[]':2,'electricity[2]':'125.50','water[2]':'80'})
+        tenant_preview=next(tenant for tenant in batch_preview['tenants'] if tenant['tenant_id']==2)
+        assert newbill==(400000,900000+tenant_preview['electricity']+tenant_preview['water']-10000,tenant_preview['electricity'],tenant_preview['water']),newbill
+        assert con.execute("SELECT amount,reason FROM billing_adjustments WHERE billing_id=(SELECT id FROM billing WHERE tenant_id=2 AND period=?) AND type='discount'",[nxt]).fetchone()==(10000,'Room promotion')
+        html=admin.post('batch_billing','batch',room_id=registration_room,period=nxt,cutoff=nxt+'-15',due_date=nxt+'-28',**{'selected[]':2,'room_utilities':batch_utilities,'discount':'100','discount_reason':'Room promotion'})
         assert '0 statements created. 1 skipped' in html
         assert 'carried forward' in admin.post('void_payment','payments',payment_id=6,reason='Cannot change a carried bill')
         assert 'Test Residence' in other.get('index.php?page=ledger')[1]
@@ -241,7 +413,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'Tenant account created' in admin.post('tenant_account','tenants',tenant_id=existing_id,username='existing.resident',temporary_password='ExistingTesting@2026',confirm_password='ExistingTesting@2026')
         assert con.execute('SELECT tenant_id,must_change FROM users WHERE username=?',['existing.resident']).fetchone()==(existing_id,1)
         existing=Client()
-        assert 'Set a new personal password' in existing.post('login','login',username='existing.resident',role='tenant',password='ExistingTesting@2026')
+        assert 'Set a new personal password' in existing.post('login','login',username='existing.resident',password='ExistingTesting@2026')
         assert con.execute('SELECT COUNT(*) FROM tenants').fetchone()[0]==3
         assert con.execute('SELECT COUNT(*) FROM users WHERE tenant_id=?',[existing_id]).fetchone()[0]==1
         signup=Client()
@@ -257,15 +429,18 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         new_id=con.execute('SELECT tenant_id FROM users WHERE username=?',['self.registered']).fetchone()[0]
         assert con.execute('SELECT role,must_change,active FROM users WHERE username=?',['self.registered']).fetchone()==('tenant',0,1)
         assert con.execute('SELECT COUNT(*) FROM tenant_assignments WHERE tenant_id=?',[new_id]).fetchone()[0]==0
-        assert 'Not assigned yet' in signup.post('login','login',username='self.registered',role='tenant',password='PersonalTesting@2026')
+        assert 'Not assigned yet' in signup.post('login','login',username='self.registered',password='PersonalTesting@2026')
         assert signup.get('index.php?page=accounts')[0]==403
         assert 'Your room must be assigned' in signup.get('index.php?page=requests')[1]
         assert 'value="request"' not in signup.get('index.php?page=requests')[1]
         assert signup.get('index.php?page=statement&id=1')[0]==404
         bed_screen=admin.get('index.php?page=rooms&bed_id=1')[1]
-        assert 'SELECTED BED' in bed_screen and 'Assign a resident' in bed_screen and 'value="1" selected' in bed_screen
+        assert 'SELECTED BED' in bed_screen and 'Assign a tenant' in bed_screen and 'data-assignment-room' in bed_screen and 'data-assignment-bed' in bed_screen and 'value="1" selected' in bed_screen
         assert 'Assign room' in admin.get('index.php?page=tenants')[1]
-        admin.post('assign_tenant','rooms',tenant_id=new_id,bed_id=1,move_in=today)
+        bed_room=con.execute('SELECT room_id FROM bed_spaces WHERE id=1').fetchone()[0]
+        wrong_room=con.execute('SELECT id FROM rooms WHERE id<>? AND status=? LIMIT 1',[bed_room,'active']).fetchone()[0]
+        assert 'selected room' in admin.post('assign_tenant','rooms',tenant_id=new_id,bed_id=1,room_id=wrong_room,move_in=today)
+        admin.post('assign_tenant','rooms',tenant_id=new_id,bed_id=1,room_id=bed_room,move_in=today)
         assert 'Occupied by' in admin.get('index.php?page=rooms&bed_id=1')[1]
         admin.post('assign_tenant','rooms',tenant_id=2,bed_id=1,move_in=today)
         assert con.execute('SELECT COUNT(*) FROM tenant_assignments WHERE bed_id=1 AND end_date IS NULL').fetchone()[0]==1
@@ -294,7 +469,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
             assert con.execute("SELECT COUNT(*) FROM notifications WHERE billing_id=? AND dedup_key LIKE 'due-%'",[current_bill]).fetchone()[0]==count
         con.execute('UPDATE billing SET due_date=? WHERE id=?',[original_due,current_bill])
         prepared=other.get('index.php?page=pay')[1]
-        assert 'value="9000.00"' in prepared,prepared[-2500:]
+        assert 'value="8900.00"' in prepared,prepared[-2500:]
         assert 'Paano' not in prepared
         report=admin.get('index.php?page=reports')[1]
         for chart in ['Monthly collections','Payment methods','Current statement status','Outstanding balances by age']:
@@ -338,10 +513,10 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'do not have access' in other.post('review_submission','pay',submission_id=2,decision='approved',verified=1)
         assert 'Payment verified' in staff.post('review_submission','payments',submission_id=2,decision='approved',verified=1,review_note='Funds verified in test account.')
         pid=con.execute('SELECT payment_id FROM payment_submissions WHERE id=2').fetchone()[0]
-        assert con.execute('SELECT amount,balance_after,received_by FROM payments WHERE id=?',[pid]).fetchone()==(250000,650000,2)
+        assert con.execute('SELECT amount,balance_after,received_by FROM payments WHERE id=?',[pid]).fetchone()==(250000,640000,2)
         for viewer in [admin,staff,other]:
             assert 'TENANT-GCASH-1' in viewer.get('index.php?page=payments')[1]
-            assert '6,500.00' in viewer.get('index.php?page=statement&id='+str(current_bill))[1]
+            assert '6,400.00' in viewer.get('index.php?page=statement&id='+str(current_bill))[1]
         assert 'already reviewed' in staff.post('review_submission','payments',submission_id=2,decision='approved',verified=1)
         assert con.execute('SELECT COUNT(*) FROM payments WHERE billing_id=?',[current_bill]).fetchone()[0]==1
         assert 'Payment confirmation' in other.get('index.php?page=receipt&id='+str(pid))[1]
@@ -442,7 +617,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'Departure completed' in admin.post('confirm_departure','departure')
         assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=?',[fresh_id]).fetchone()[0] == 1
         assert con.execute('SELECT status FROM tenants WHERE id=?',[fresh_id]).fetchone()[0] == 'moved_out'
-        # Fixed utilities: room rates, allocation, immutable snapshots, and all role boundaries.
+        # Legacy utility allocation remains available for existing rooms.
         assert 'at most 72' in admin.post('password','account',current_password='AdminTesting@2026',new_password='A'*73,confirm_password='A'*73)
         expected_rates=[(65000,18000),(85000,22000),(110000,28000),(75000,20000)]
         assert con.execute('SELECT fixed_electricity,fixed_water FROM rooms ORDER BY id LIMIT 4').fetchall()==expected_rates
@@ -455,6 +630,25 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         admin.post('room','rooms',number='UTIL-B',capacity=2,rent=1000,fixed_electricity='750',fixed_water='200')
         room_a=con.execute("SELECT id FROM rooms WHERE number='UTIL-A'").fetchone()[0]
         room_b=con.execute("SELECT id FROM rooms WHERE number='UTIL-B'").fetchone()[0]
+        assert 'Saved successfully' in admin.post('room_update','rooms',room_id=room_a,number='UTIL-ALPHA',rent=1000,status='active',fixed_electricity='850.01',fixed_water='220.01')
+        assert con.execute('SELECT number FROM rooms WHERE id=?',[room_a]).fetchone()==('UTIL-ALPHA',)
+        assert 'Saved successfully' in admin.post('room_update','rooms',room_id=room_a,number='UTIL-ALPHA',capacity=2,rent=1000,status='active',fixed_electricity='850.01',fixed_water='220.01')
+        assert con.execute('SELECT capacity FROM rooms WHERE id=?',[room_a]).fetchone()==(2,)
+        assert con.execute('SELECT COUNT(*) FROM bed_spaces WHERE room_id=?',[room_a]).fetchone()==(2,)
+        assert 'Saved successfully' in admin.post('room_update','rooms',room_id=room_a,number='UTIL-ALPHA',capacity=3,rent=1000,status='active',fixed_electricity='850.01',fixed_water='220.01')
+        assert con.execute('SELECT COUNT(*) FROM bed_spaces WHERE room_id=?',[room_a]).fetchone()==(3,)
+        assert 'already in use' in admin.post('room_update','rooms',room_id=room_a,number='UTIL-B',rent=1000,status='active',fixed_electricity='850.01',fixed_water='220.01')
+        assert '50 characters or fewer' in admin.post('room_update','rooms',room_id=room_a,number='R'*51,rent=1000,status='active',fixed_electricity='850.01',fixed_water='220.01')
+        room_screen=admin.get('index.php?page=rooms')[1]
+        assert 'Room name / number' in room_screen and 'Bed capacity' in room_screen
+        assert 'Fixed room electricity / month' not in room_screen and 'Fixed room water / month' not in room_screen
+        admin.post('room','rooms',number='NO-RATES',capacity=1,rent=1000)
+        no_rates=con.execute("SELECT fixed_electricity,fixed_water FROM rooms WHERE number='NO-RATES'").fetchone()
+        assert no_rates==(None,None)
+        admin.post('room','rooms',number='REMOVE-ME',capacity=2,rent=1000)
+        removable_room=con.execute("SELECT id FROM rooms WHERE number='REMOVE-ME'").fetchone()[0]
+        assert 'Saved successfully' in admin.post('room_delete','rooms',room_id=removable_room)
+        assert con.execute('SELECT COUNT(*) FROM rooms WHERE id=?',[removable_room]).fetchone()==(0,)
         beds_a=[v[0] for v in con.execute('SELECT id FROM bed_spaces WHERE room_id=? ORDER BY id',[room_a]).fetchall()]
         bed_b=con.execute('SELECT id FROM bed_spaces WHERE room_id=? ORDER BY id',[room_b]).fetchone()[0]
         people=[]
@@ -463,6 +657,10 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
             con.execute('INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)',['Utility Resident '+str(ix),email,'09170000000',first])
             tid=con.execute('SELECT id FROM tenants WHERE email=?',[email]).fetchone()[0];people.append(tid)
             admin.post('assign_tenant','tenants',tenant_id=tid,bed_id=bed,move_in=first)
+        assert 'tenant assignment history' in admin.post('room_delete','rooms',room_id=room_a)
+        assert con.execute('SELECT COUNT(*) FROM rooms WHERE id=?',[room_a]).fetchone()==(1,)
+        assert 'cannot be lower than the number of occupied beds' in admin.post('room_update','rooms',room_id=room_a,number='UTIL-ALPHA',capacity=2,rent=1000,status='active',fixed_electricity='850.01',fixed_water='220.01')
+        assert con.execute('SELECT capacity FROM rooms WHERE id=?',[room_a]).fetchone()==(3,)
         def month_after(period,count):
             year,month=map(int,period.split('-'));number=year*12+month-1+count
             return f'{number//12:04d}-{number%12+1:02d}'
@@ -479,8 +677,12 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert con.execute('SELECT fixed_electricity,fixed_water FROM rooms WHERE id=?',[room_a]).fetchone()==(99999,33333)
         # A mid-month transfer keeps one share from the original snapshot room.
         admin.post('transfer','tenants',tenant_id=people[1],bed_id=bed_b,transfer_date=today.isoformat())
+        room_b_bed=con.execute('SELECT id FROM bed_spaces WHERE room_id=? AND id<>? ORDER BY id LIMIT 1',[room_b,bed_b]).fetchone()[0]
+        con.execute('INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)',['Billing Room B Resident','billing-room-b@example.com','09170000000',first])
+        room_b_person=con.execute('SELECT id FROM tenants WHERE email=?',['billing-room-b@example.com']).fetchone()[0]
+        admin.post('assign_tenant','tenants',tenant_id=room_b_person,room_id=room_b,bed_id=room_b_bed,move_in=first)
         admin.post('bill','billing',tenant_id=people[1],period=utility_month,cutoff=utility_month+'-15',due_date=utility_month+'-28',rent=1000)
-        admin.post('batch_billing','batch',period=utility_month,cutoff=utility_month+'-15',due_date=utility_month+'-28',**{'selected[]':people[2],'electricity['+str(people[2])+']':'1','water['+str(people[2])+']':'1'})
+        admin.post('batch_billing','batch',room_id=room_a,period=utility_month,cutoff=utility_month+'-15',due_date=utility_month+'-28',**{'selected[]':people[2],'room_utilities':'1070.02','discount':'0'})
         assert con.execute('SELECT SUM(electricity),SUM(water) FROM billing WHERE tenant_id IN (?,?,?) AND period=?',[*people,utility_month]).fetchone()==(85001,22001)
         assert con.execute('SELECT value FROM settings WHERE `key`=?',['utility_snapshot_'+utility_month]).fetchone()[0]==snapshot
         assert con.execute('SELECT id,electricity,water,total_due FROM billing WHERE id<? ORDER BY id',[b1]).fetchall()==before_bills
@@ -495,10 +697,90 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         # Atomic batch failure must roll back both the first statement and its snapshot.
         rollback_month=month_after(future_month,1)
         status,form=admin.get('index.php?page=batch');csrf=re.search(r'name="csrf" value="([^"]+)"',form)[1]
-        payload=[('csrf',csrf),('action','batch_billing'),('return_page','batch'),('period',rollback_month),('cutoff',rollback_month+'-15'),('due_date',rollback_month+'-28'),('selected[]',people[0]),('selected[]',999999)]
+        payload=[('csrf',csrf),('action','batch_billing'),('return_page','batch'),('room_id',room_a),('period',rollback_month),('cutoff',rollback_month+'-15'),('due_date',rollback_month+'-28'),('room_utilities','1333.33'),('discount','0'),('selected[]',people[0]),('selected[]',999999)]
         admin.opener.open(Request(BASE+'index.php',urlencode(payload).encode())).read()
         assert con.execute('SELECT COUNT(*) FROM billing WHERE period=?',[rollback_month]).fetchone()[0]==0
         assert con.execute('SELECT COUNT(*) FROM settings WHERE `key`=?',['utility_snapshot_'+rollback_month]).fetchone()[0]==0
+        room_b_totals=con.execute('SELECT fixed_electricity,fixed_water FROM rooms WHERE id=?',[room_b]).fetchone()
+        con.execute('UPDATE rooms SET fixed_electricity=NULL,fixed_water=NULL WHERE id=?',[room_b])
+        preview_a=json.loads(admin.get('index.php?batch_preview=1&room_id='+str(room_a)+'&period='+rollback_month)[1])
+        assert preview_a['room']['utilities']==con.execute('SELECT fixed_electricity+fixed_water FROM rooms WHERE id=?',[room_a]).fetchone()[0]
+        preview_b=json.loads(admin.get('index.php?batch_preview=1&room_id='+str(room_b)+'&period='+rollback_month)[1])
+        assert {tenant['tenant_id'] for tenant in preview_a['tenants']}=={people[0],people[2]}
+        assert {tenant['tenant_id'] for tenant in preview_b['tenants']}=={people[1],room_b_person}
+        room_b_utilities=f'{(room_b_totals[0]+room_b_totals[1])//100}.{(room_b_totals[0]+room_b_totals[1])%100:02d}'
+        assert 'not actively assigned to this room' in admin.post('batch_billing','batch',room_id=room_a,period=rollback_month,cutoff=rollback_month+'-15',due_date=rollback_month+'-28',**{'room_utilities':'1333.33','discount':'0','selected[]':room_b_person})
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=? AND period=?',[room_b_person,rollback_month]).fetchone()[0]==0
+        assert '2 statements created' in admin.post('batch_billing','batch',room_id=room_a,period=rollback_month,cutoff=rollback_month+'-15',due_date=rollback_month+'-28',**{'room_utilities':'1333.33','discount':'10','discount_reason':'Room discount','selected[]':[people[0],people[2]]})
+        assert con.execute("SELECT COUNT(*) FROM billing_adjustments ba JOIN billing b ON b.id=ba.billing_id WHERE b.tenant_id IN (?,?) AND b.period=? AND ba.type='discount' AND ba.amount=1000",[people[0],people[2],rollback_month]).fetchone()==(2,)
+        assert con.execute('SELECT SUM(electricity+water) FROM billing WHERE tenant_id IN (?,?) AND period=?',[people[0],people[2],rollback_month]).fetchone()==(133333,)
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=? AND period=?',[people[2],rollback_month]).fetchone()[0]==1
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id IN (?,?) AND period=?',[people[1],room_b_person,rollback_month]).fetchone()[0]==0
+        con.execute('UPDATE rooms SET fixed_electricity=?,fixed_water=? WHERE id=?',[*room_b_totals,room_b])
+        assert '1 statements created' in staff.post('batch_billing','batch',room_id=room_b,period=rollback_month,cutoff=rollback_month+'-15',due_date=rollback_month+'-28',room_utilities=room_b_utilities,discount='0',**{'selected[]':room_b_person})
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id=? AND period=?',[room_b_person,rollback_month]).fetchone()[0]==1
+        assert con.execute('SELECT COUNT(*) FROM billing WHERE tenant_id IN (?,?) AND period=?',[people[0],people[2],rollback_month]).fetchone()[0]==2
+        qr_tenant_ids=[row[0] for row in con.execute("SELECT id FROM tenants WHERE status='active' ORDER BY id").fetchall()]
+        assert len(qr_tenant_ids)>=2
+        qr_tenant=con.execute("SELECT tenant_id FROM users WHERE username='another'").fetchone()[0]
+        assert qr_tenant in qr_tenant_ids
+        qr_room=con.execute('SELECT r.id FROM tenant_assignments a JOIN bed_spaces b ON b.id=a.bed_id JOIN rooms r ON r.id=b.room_id WHERE a.tenant_id=? AND a.end_date IS NULL',[qr_tenant]).fetchone()[0]
+        qr_page=admin.get('index.php?page=qr_management')[1]
+        assert all(label in qr_page for label in ['QR Code Management','Total Active Tenants','Tenants with QR Codes','Tenants without QR Codes','Generate All QR','Print All QR','Print per Room','Generate QR','qr-management.js','qr-management.css'])
+        assert 'TENANT QR SCANNER' in other.get('index.php?page=dashboard')[1]
+        assert 'Tenant QR code generated.' in admin.post('tenant_qr_generate','qr_management',tenant_id=qr_tenant)
+        first_qr=con.execute("SELECT id,token FROM tenant_qr_codes WHERE tenant_id=? AND status='active'",[qr_tenant]).fetchone()
+        assert first_qr and re.fullmatch(r'[a-f0-9]{64}',first_qr[1])
+        assert first_qr[1] not in admin.get('index.php?page=qr_management')[1]
+        scan_status,scan_result=scan_tenant_qr(other,'ADQR1:'+first_qr[1])
+        assert scan_status==200 and scan_result['tenant']['id']==qr_tenant
+        expected_tenant_name=con.execute('SELECT name FROM tenants WHERE id=?',[qr_tenant]).fetchone()[0]
+        expected_room_info=con.execute('SELECT r.number,bs.label FROM tenant_assignments a JOIN bed_spaces bs ON bs.id=a.bed_id JOIN rooms r ON r.id=bs.room_id WHERE a.tenant_id=? AND a.end_date IS NULL',[qr_tenant]).fetchone()
+        assert (scan_result['tenant']['name'],scan_result['tenant']['room'],scan_result['tenant']['bed'])==(expected_tenant_name,str(expected_room_info[0]),expected_room_info[1])
+        bill=scan_result['current_bill']
+        expected_bill=con.execute("SELECT b.period,b.rent,b.water,b.electricity,b.previous_balance,b.total_due,COALESCE((SELECT SUM(amount) FROM payments WHERE billing_id=b.id AND voided_at IS NULL),0) FROM billing b WHERE b.tenant_id=? AND b.carried_to IS NULL ORDER BY b.period DESC,b.id DESC LIMIT 1",[qr_tenant]).fetchone()
+        assert expected_bill and (bill['period'],bill['rent'],bill['water'],bill['electricity'],bill['previous_balance'],bill['total_due'],bill['total_paid'])==expected_bill
+        assert bill['remaining_balance']==max(0,bill['total_due']-bill['total_paid'])
+        expected_history=con.execute("SELECT p.payment_date,p.amount,p.method,b.period FROM payments p JOIN billing b ON b.id=p.billing_id WHERE p.tenant_id=? AND p.voided_at IS NULL ORDER BY p.payment_date DESC,p.id DESC",[qr_tenant]).fetchall()
+        assert [(p['payment_date'],p['amount'],'GCash' if p['method']=='GCash' else 'Cash',p['period']) for p in scan_result['payment_history']]==[(p[0],p[1],'GCash' if p[2]=='GCash' else 'Cash',p[3]) for p in expected_history]
+        assert 'already has an active QR code' in admin.post('tenant_qr_generate','qr_management',tenant_id=qr_tenant)
+        assert con.execute("SELECT COUNT(*) FROM tenant_qr_codes WHERE tenant_id=? AND status='active'",[qr_tenant]).fetchone()[0]==1
+        image_status,image=admin.get('index.php?tenant_qr_image='+str(first_qr[0]))
+        download_status,downloaded=admin.get('index.php?tenant_qr_download='+str(first_qr[0]))
+        assert image_status==download_status==200 and '<svg' in image and '<svg' in downloaded
+        assert 'QR code(s) generated. Existing active codes were unchanged.' in admin.post('tenant_qr_generate_all','qr_management')
+        active_tenant_count=con.execute("SELECT COUNT(*) FROM tenants WHERE status='active'").fetchone()[0]
+        assert con.execute("SELECT COUNT(*) FROM tenant_qr_codes WHERE status='active'").fetchone()[0]==active_tenant_count
+        qr_page=admin.get('index.php?page=qr_management')[1]
+        assert all(label in qr_page for label in ['View QR','Download QR','Print QR','Reissue QR','Tenant ID Card'])
+        assert 'Are you sure you want to reissue this tenant&#039;s QR code? The previous QR code will no longer work.' in qr_page
+        assert qr_page.count('class="qr-print-card"')==active_tenant_count
+        assert con.execute("SELECT token FROM tenant_qr_codes WHERE id=?",[first_qr[0]]).fetchone()[0]==first_qr[1]
+        all_active_before=con.execute("SELECT tenant_id,id,token FROM tenant_qr_codes WHERE status='active' AND tenant_id<>? ORDER BY tenant_id",[qr_tenant]).fetchall()
+        admin.post('tenant_qr_generate_all','qr_management')
+        assert con.execute("SELECT COUNT(*) FROM tenant_qr_codes WHERE status='active'").fetchone()[0]==active_tenant_count
+        assert con.execute("SELECT tenant_id,id,token FROM tenant_qr_codes WHERE status='active' AND tenant_id<>? ORDER BY tenant_id",[qr_tenant]).fetchall()==all_active_before
+        room_page=admin.get('index.php?'+urlencode({'page':'qr_management','room_id':qr_room}))[1]
+        assert 'data-room-id="'+str(qr_room)+'"' in room_page and 'data-qr-id="'+str(first_qr[0])+'"' in room_page
+        assert '<article class="qr-print-card" data-qr-id="'+str(first_qr[0])+'" data-room-id="'+str(qr_room)+'">' in room_page
+        second_token=con.execute("SELECT token FROM tenant_qr_codes WHERE tenant_id=? AND status='active'",[qr_tenant_ids[1]]).fetchone()[0]
+        cross_status,cross_result=scan_tenant_qr(other,'ADQR1:'+second_token)
+        assert cross_status==404 and 'tenant' not in cross_result
+        guest_status,guest_result=scan_tenant_qr(Client(),'ADQR1:'+first_qr[1])
+        assert guest_status==403 and 'tenant' not in guest_result
+        assert 'Tenant QR code reissued. The previous QR code is no longer valid.' in admin.post('tenant_qr_reissue','qr_management',tenant_id=qr_tenant)
+        new_qr=con.execute("SELECT id,token FROM tenant_qr_codes WHERE tenant_id=? AND status='active'",[qr_tenant]).fetchone()
+        assert new_qr and new_qr[0]!=first_qr[0] and new_qr[1]!=first_qr[1]
+        assert con.execute("SELECT COUNT(*) FROM tenant_qr_codes WHERE tenant_id=? AND status='revoked'",[qr_tenant]).fetchone()[0]==1
+        assert con.execute("SELECT token FROM tenant_qr_codes WHERE tenant_id=? AND status='active'",[qr_tenant_ids[1]]).fetchone()[0]==second_token
+        assert admin.get('index.php?tenant_qr_image='+str(first_qr[0]))[0]==404
+        assert admin.get('index.php?tenant_qr_image='+str(new_qr[0]))[0]==200
+        revoked_status,revoked_result=scan_tenant_qr(other,'ADQR1:'+first_qr[1])
+        assert revoked_status==404 and 'tenant' not in revoked_result
+        assert scan_tenant_qr(other,'ADQR1:'+new_qr[1])[0]==200
+        assert staff.get('index.php?page=qr_management')[0]==403
+        assert staff.get('index.php?tenant_qr_image='+str(new_qr[0]))[0]==403
+        qr_history=con.execute('SELECT id,tenant_id,token,status,revoked_at FROM tenant_qr_codes ORDER BY id').fetchall()
         # Setup is repeatable and preserves edited rates, bills, and payments.
         frozen=con.execute('SELECT id,total_due,electricity,water FROM billing ORDER BY id').fetchall()
         payment_history=con.execute('SELECT id,amount,balance_after FROM payments ORDER BY id').fetchall()
@@ -506,8 +788,18 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert con.execute('SELECT fixed_electricity,fixed_water FROM rooms WHERE id=?',[room_a]).fetchone()==(99999,33333)
         assert con.execute('SELECT id,total_due,electricity,water FROM billing ORDER BY id').fetchall()==frozen
         assert con.execute('SELECT id,amount,balance_after FROM payments ORDER BY id').fetchall()==payment_history
+        assert con.execute('SELECT id,tenant_id,token,status,revoked_at FROM tenant_qr_codes ORDER BY id').fetchall()==qr_history
+        disable_admin=Client()
+        assert 'Verify your sign-in' in disable_admin.post('login','login',username='admin',password='AdminTesting@2026')
+        assert 'welcome-banner' in disable_admin.post('verify_admin_otp','otp',code=recovery_codes[2])
+        disabled=disable_admin.post('disable_admin_2fa','security',code=recovery_codes[3])
+        assert 'Two-factor authentication was disabled' in disabled
+        assert con.execute('SELECT COUNT(*) FROM admin_two_factor WHERE user_id=?',[admin_id]).fetchone()[0]==0
+        assert 'Sign in to your account' in admin.get('index.php?page=dashboard')[1]
+        reenroll=Client().post('login','login',username='admin',password='AdminTesting@2026')
+        assert 'Connect Google Authenticator' in reenroll and 'welcome-banner' not in reenroll
         con.close()
-        print('PASS: MySQL core flows plus tenant onboarding, payment guide, GCash submission, validated private proof uploads, staff approval/rejection, receipt and balance updates, duplicate/overpayment/carry protection, cancellation, tenant inbox, inquiries, profile updates, tenant privacy, final departure billing, proration, stale-preview protection, missing-period protection, atomic bed release, fixed room rates, exact shared rounding, frozen rates, transfer allocation, batch rollback, and repeatable migration.')
+        print('PASS: MySQL core flows plus Admin TOTP enrollment and login challenges, invalid-code retry, email sign-in, session and route protection, OTP throttling, one-use recovery codes, Admin logout, secure disable, unchanged Staff login, tenant onboarding and payment flows, final departure billing, utility allocation, batch rollback, QR generation/no-duplicates/view/download/reissue/revocation, tenant self-scan and billing/payment data, cross-tenant privacy, and repeatable migration.')
     finally:
         if con:
             for (filename,) in con.execute('SELECT proof_file FROM payment_submissions WHERE proof_file IS NOT NULL').fetchall():

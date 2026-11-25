@@ -81,7 +81,8 @@ function portal_action(string $action,array $u): bool {
         require_role(['tenant']); $email=required('email'); $name=required('name'); $contact=required('contact');
         if(!filter_var($email,FILTER_VALIDATE_EMAIL)||strlen($email)>254||strlen($name)>200||strlen($contact)>80) throw new RuntimeException('Check your name, email, and contact number.');
         if(one('SELECT id FROM tenants WHERE email=? AND id<>?',[$email,$u['tenant_id']])) throw new RuntimeException('This email is linked to another tenant.');
-        query('UPDATE tenants SET name=?,email=?,contact=? WHERE id=?',[$name,$email,$contact,$u['tenant_id']]); query('UPDATE users SET name=? WHERE id=?',[$name,$u['id']]);
+        $email=account_email($email,(int)$u['id']);
+        query('UPDATE tenants SET name=?,email=?,contact=? WHERE id=?',[$name,$email,$contact,$u['tenant_id']]); query('UPDATE users SET name=?,email=? WHERE id=?',[$name,$email,$u['id']]);
         audit('Tenant updated own contact details','tenants',(int)$u['tenant_id']); return true;
     case 'inquiry':
         require_role(['tenant']); $category=required('category');
@@ -90,7 +91,7 @@ function portal_action(string $action,array $u): bool {
     case 'reply_inquiry':
         require_role(['admin','staff']); $id=(int)required('inquiry_id'); $q=one('SELECT * FROM tenant_inquiries WHERE id=?',[$id]);
         if(!$q) throw new RuntimeException('Inquiry not found.');
-        if($u['role']==='staff' && !in_array($q['category'],['Payment','Billing'],true)) throw new RuntimeException('The administrator handles this inquiry category.');
+        if($u['role']==='staff' && !in_array($q['category'],['Payment','Billing'],true)) throw new RuntimeException('The Landlady handles this inquiry category.');
         $reply=required('reply'); query("UPDATE tenant_inquiries SET reply=?,status='resolved',replied_by=?,replied_at=UTC_TIMESTAMP() WHERE id=?",[$reply,$u['id'],$id]);
         notify((int)$q['tenant_id'],null,'inquiry','Reply to: '.$q['subject'],$reply); audit('Replied to tenant inquiry','tenant_inquiries',$id); return true;
     case 'payment_settings':

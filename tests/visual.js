@@ -6,7 +6,9 @@ import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(__dirname,'..'),php='C:\\xampp\\php\\php.exe';
-const dbname='angelinas_test_'+crypto.randomBytes(6).toString('hex'),env={...process.env,DORMITORY_DB_NAME:dbname};
+const dbname='angelinas_test_'+crypto.randomBytes(6).toString('hex'),env={...process.env,DORMITORY_DB_NAME:dbname,DORMITORY_TOTP_ENCRYPTION_KEY:crypto.randomBytes(32).toString('base64')};
+const decodeBase32=value=>{const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='',bytes=[];for(const char of value.toUpperCase()){const index=alphabet.indexOf(char);if(index<0)throw new Error('Invalid TOTP setup key.');bits+=index.toString(2).padStart(5,'0');while(bits.length>=8){bytes.push(parseInt(bits.slice(0,8),2));bits=bits.slice(8);}}return Buffer.from(bytes);};
+const totp=(secret,offset=0)=>{const key=decodeBase32(secret),counter=BigInt(Math.floor(Date.now()/30000)+offset),message=Buffer.alloc(8);message.writeBigUInt64BE(counter);const digest=crypto.createHmac('sha1',key).update(message).digest(),position=digest[digest.length-1]&15;return String((digest.readUInt32BE(position)&0x7fffffff)%1000000).padStart(6,'0');};
 const directory=path.join(root,'storage','previews');fs.mkdirSync(directory,{recursive:true});
 const setup=spawnSync(php,['database/setup.php'],{cwd:root,env,encoding:'utf8'});if(setup.status!==0)throw new Error(setup.stderr||setup.stdout);
 const server=spawn(php,['-S','localhost:8082','router.php'],{cwd:root,env,windowsHide:true,stdio:'ignore'});
@@ -20,6 +22,7 @@ const navigate=async page=>{await send('Page.navigate',{url:'http://localhost:80
 const screenshot=async name=>{await evaluate('document.fonts.ready.then(()=>true)');const result=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(directory,name+'.png'),Buffer.from(result.data,'base64'));};
 async function main(){
  try{
+  let adminSecret;
   let tab;
   for(let i=0;i<80;i++){try{const tabs=await (await fetch('http://localhost:9223/json/list')).json();tab=tabs.find(t=>t.type==='page');if(tab)break;}catch{}await pause(100);}
   if(!tab)throw new Error('Headless Edge did not become ready.');
@@ -34,6 +37,7 @@ async function main(){
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await screenshot('landing-mobile');
   if(await evaluate('document.documentElement.scrollWidth>window.innerWidth'))throw new Error('Public landing page overflows mobile.');
   await evaluate("document.querySelector('.site-signin').click();true");await waitFor("document.querySelector('[name=username]')!==null");await screenshot('login-mobile');
+  if(await evaluate("document.querySelector('[name=role]')!==null"))throw new Error('Shared sign-in must not prompt for a role.');
   if(await evaluate('document.documentElement.scrollWidth>window.innerWidth'))throw new Error('Public sign-in overflows mobile.');
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1050,deviceScaleFactor:1,mobile:false});await screenshot('login-desktop');
   await navigate('index.php?page=register');await waitFor("document.querySelector('[name=action][value=register]')!==null");
@@ -44,6 +48,10 @@ async function main(){
   if(await evaluate('document.documentElement.scrollWidth>window.innerWidth'))throw new Error('Registration overflows the mobile viewport.');
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1050,deviceScaleFactor:1,mobile:false});await navigate('index.php?page=login');
   await evaluate("document.querySelector('[name=username]').value='admin';document.querySelector('[name=password]').value='Admin@12345';document.querySelector('form').requestSubmit();true");
+  await waitFor("document.querySelector('[name=action][value=confirm_admin_2fa_setup]')!==null");
+  adminSecret=await evaluate("document.querySelector('.two-factor-secret').textContent");
+  const setupCode=totp(adminSecret);
+  await evaluate(`document.querySelector('[name=code]').value='${setupCode}';document.querySelector('[name=action][value=confirm_admin_2fa_setup]').form.requestSubmit();true`);
   await waitFor("document.querySelector('[name=new_password]')!==null");
   await evaluate("document.querySelector('[name=current_password]').value='Admin@12345';document.querySelector('[name=new_password]').value='VisualTesting@2026';document.querySelector('[name=confirm_password]').value='VisualTesting@2026';document.querySelector('main form').requestSubmit();true");
   await waitFor("document.querySelector('.notice')?.textContent.includes('Saved successfully')");
@@ -51,17 +59,19 @@ async function main(){
   await navigate('index.php?page=batch');await evaluate("document.querySelector('.workspace-back').click();true");await waitFor("location.search==='?page=billing' && document.readyState==='complete'");
   await navigate('index.php?page=dashboard');
 
-  if((await evaluate("document.querySelectorAll('.sidebar nav a').length"))!==12)throw new Error('Admin navigation should contain twelve sections.');
+  if((await evaluate("document.querySelectorAll('.sidebar nav a').length"))!==13)throw new Error('Admin navigation should contain thirteen sections.');
   if((await evaluate("document.querySelectorAll('.admin-kpis .stat').length"))!==8)throw new Error('Admin overview should show eight KPIs.');
-  await navigate('index.php?page=billing');await waitFor("document.getElementById('statement-total')?.textContent.includes('12,170')");
-  if(!(await evaluate("document.querySelector('[name=electricity]').readOnly && document.querySelector('[name=water]').readOnly && document.querySelector('[name=electricity]').value==='850.00' && document.querySelector('[name=water]').value==='220.00'")))throw new Error('Expected read-only automatic room utility shares.');
-  const before=await evaluate("document.getElementById('statement-total').textContent");
-  await evaluate("const el=document.querySelector('[name=discount]');el.value='123.45';el.dispatchEvent(new Event('input',{bubbles:true}));true");
-  const after=await evaluate("document.getElementById('statement-total').textContent");if(before===after)throw new Error('Bill calculator did not respond.');
+  await navigate('index.php?page=billing');await waitFor("document.querySelector('#bill-table')!==null");
+  if(!(await evaluate("!document.querySelector('[name=action][value=bill]') && !document.getElementById('statement-preview')")))throw new Error('Statements should no longer create monthly bills.');
   await screenshot('billing-desktop');
-  await navigate('index.php?page=batch');await waitFor("document.getElementById('batch-grand-total')?.textContent!=='—'");
-  await evaluate("const p=document.querySelector('[name=period]');const d=new Date();d.setMonth(d.getMonth()+1);p.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');p.dispatchEvent(new Event('change',{bubbles:true}));true");await waitFor("document.querySelector('[data-utility-note]').textContent.includes('Snapshot date:')");const total=await evaluate("document.getElementById('batch-grand-total').textContent");if(!total.includes('12,170'))throw new Error('Unexpected batch estimate: '+total);
-  await evaluate("document.getElementById('select-all').click();true");if(!(await evaluate("document.getElementById('batch-grand-total').textContent.includes('0.00')")))throw new Error('Batch selection did not recalculate.');
+  await navigate('index.php?page=batch');await waitFor("document.querySelector('[data-batch-grand-total]')?.textContent!=='—'");
+  await evaluate("const p=document.querySelector('[name=period]');const d=new Date();d.setMonth(d.getMonth()+1);p.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');p.dispatchEvent(new Event('change',{bubbles:true}));true");
+  await waitFor("document.querySelector('[data-batch-status]').textContent.includes('eligible for') && !document.querySelector('[name=room_utilities]').readOnly");
+  if(!(await evaluate("const input=document.querySelector('[name=room_utilities]');if(!input)return false;window.__batchBefore=document.querySelector('[data-batch-grand-total]').textContent;input.value=(Number(input.value)+50).toFixed(2);input.dispatchEvent(new Event('input',{bubbles:true}));true")))throw new Error('Room utilities total should be editable.');
+  await waitFor("document.querySelector('[data-batch-status]').textContent.includes('eligible for') && document.querySelector('[data-batch-grand-total]').textContent!==window.__batchBefore");
+  if(!(await evaluate("const before=document.querySelector('[data-batch-grand-total]').textContent,discount=document.querySelector('[name=discount]');discount.value='100';discount.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-batch-grand-total]').textContent!==before")))throw new Error('Per-tenant discount did not update the room estimate.');
+  await evaluate("document.querySelector('[data-batch-select-all]').click();true");
+  if(!(await evaluate("document.querySelector('[data-batch-grand-total]').textContent!=='—'")))throw new Error('Batch selection did not recalculate.');
   await screenshot('batch-desktop');
   await navigate('index.php?page=reports');if((await evaluate("document.querySelectorAll('.report-chart').length"))!==5)throw new Error('Expected five financial report charts.');await screenshot('reports-desktop');
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
@@ -70,7 +80,7 @@ async function main(){
   await evaluate("document.getElementById('menu-toggle').click();true");if(!(await evaluate("document.body.classList.contains('sidebar-open')")))throw new Error('Mobile menu did not open.');
   await screenshot('navigation-mobile');await evaluate("document.getElementById('sidebar-scrim').click();true");
   await evaluate("document.querySelector('.sidebar form').requestSubmit();true");await waitFor("document.querySelector('[name=password]')!==null");
-  await evaluate("document.querySelector('[name=role]').value='tenant';document.querySelector('[name=username]').value='tenant';document.querySelector('[name=password]').value='Tenant@12345';document.querySelector('form').requestSubmit();true");
+  await evaluate("document.querySelector('[name=username]').value='tenant';document.querySelector('[name=password]').value='Tenant@12345';document.querySelector('form').requestSubmit();true");
   await waitFor("document.querySelector('[name=new_password]')!==null");
   await evaluate("document.querySelector('[name=current_password]').value='Tenant@12345';document.querySelector('[name=new_password]').value='TenantVisual@2026';document.querySelector('[name=confirm_password]').value='TenantVisual@2026';document.querySelector('main form').requestSubmit();true");
   await waitFor("document.querySelector('.notice')?.textContent.includes('Saved successfully')");
@@ -81,13 +91,11 @@ async function main(){
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1050,deviceScaleFactor:1,mobile:false});
   await navigate('index.php?page=dashboard');await screenshot('tenant-dashboard-desktop');
   await navigate('index.php?page=pay');if(!(await evaluate("Number(document.querySelector('[name=amount]').value)>0")))throw new Error('Tenant payment amount was not prepared.');await screenshot('tenant-pay-desktop');
-  if(!(await evaluate("document.querySelector('[data-qr-panel]').hidden && document.querySelector('[data-digital-submission]').hidden")))throw new Error('Scanner and submission should stay hidden before a payment method is chosen.');
+  if(!(await evaluate("document.querySelector('[name=payment_choice]').options.length===2 && !document.querySelector('[name=payment_choice]').querySelector('option[value=\"\"]') && !document.querySelector('[data-qr-panel]').hidden && !document.querySelector('[data-digital-submission]').hidden && document.querySelector('[name=payment_recipient]').value==='landlady'")))throw new Error('GCash should be selected with the Landlady as recipient and its payment details visible.');
+  await evaluate("document.querySelector('[name=payment_choice]').value='cash';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));true");
+  if(!(await evaluate("!document.getElementById('office-payment-panel').hidden && document.querySelector('[data-digital-submission]').hidden && document.querySelector('[name=amount]').disabled && document.querySelector('[name=payment_recipient]').value==='staff'")))throw new Error('Cash should go to Staff and show office instructions without a digital submission.');
   await evaluate("document.querySelector('[name=payment_choice]').value='gcash';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));true");
-  if(!(await evaluate("document.querySelector('[data-qr-panel]').hidden && !document.querySelector('[data-digital-submission]').hidden")))throw new Error('GCash must show submission without scanner.');
-  await evaluate("document.querySelector('[name=payment_choice]').value='office';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));true");
-  if(!(await evaluate("!document.getElementById('office-payment-panel').hidden && document.querySelector('[data-digital-submission]').hidden && document.querySelector('[name=amount]').disabled")))throw new Error('Office payments must show instructions without a digital submission.');
-  await evaluate("document.querySelector('[name=payment_choice]').value='qr';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));true");
-  if(!(await evaluate("!document.querySelector('[data-qr-panel]').hidden && !document.querySelector('[data-digital-submission]').hidden")))throw new Error('QR option must show scanner and submission.');
+  if(!(await evaluate("!document.querySelector('[data-qr-panel]').hidden && !document.querySelector('[data-digital-submission]').hidden && document.querySelector('[name=payment_recipient]').value==='landlady'")))throw new Error('GCash should go to the Landlady and show scanner and submission.');
 
   if(!(await evaluate("document.querySelector('.notification-bell')!==null && document.getElementById('qr-start')!==null")))throw new Error('Notification bell or scanner missing.');
 
@@ -95,9 +103,9 @@ async function main(){
   await waitFor("document.getElementById('qr-video').readyState>=2");
   if(!(await evaluate("document.getElementById('qr-video').getBoundingClientRect().height>=200 && getComputedStyle(document.getElementById('qr-video')).position==='static'")))throw new Error('Live camera preview has no visible height.');
   await screenshot('tenant-camera-visible');
-  await evaluate("document.querySelector('[name=payment_choice]').value='gcash';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));clearInterval(visibleFramePump);true");
+  await evaluate("document.querySelector('[name=payment_choice]').value='cash';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));clearInterval(visibleFramePump);true");
   if(!(await evaluate("visibleTestStream.getTracks().every(track=>track.readyState==='ended')")))throw new Error('Changing payment method must stop camera tracks.');
-  await evaluate("document.querySelector('[name=payment_choice]').value='qr';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));true");
+  await evaluate("document.querySelector('[name=payment_choice]').value='gcash';document.querySelector('[name=payment_choice]').dispatchEvent(new Event('change'));true");
   await evaluate(fs.readFileSync(path.join(root,'tests/vendor/qrcode.js'),'utf8'));
   await evaluate(`window.qrFixtureCanvas=document.createElement('canvas');const qr=qrcode(0,'L');qr.addData('TEST-DORMITORY-PAYMENT-QR');qr.make();const cells=qr.getModuleCount(),scale=8;qrFixtureCanvas.width=qrFixtureCanvas.height=(cells+8)*scale;const context=qrFixtureCanvas.getContext('2d');context.fillStyle='white';context.fillRect(0,0,qrFixtureCanvas.width,qrFixtureCanvas.height);context.fillStyle='black';for(let row=0;row<cells;row++)for(let col=0;col<cells;col++)if(qr.isDark(row,col))context.fillRect((col+4)*scale,(row+4)*scale,scale,scale);new Promise(resolve=>qrFixtureCanvas.toBlob(blob=>{const transfer=new DataTransfer();transfer.items.add(new File([blob],'qr.png',{type:'image/png'}));const input=document.getElementById('qr-file');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));resolve(true);}));`);
   await waitFor("document.getElementById('qr-result').textContent==='TEST-DORMITORY-PAYMENT-QR'");
@@ -117,7 +125,10 @@ async function main(){
   await navigate('index.php?page=payments');await screenshot('tenant-submissions-desktop');
   if(!(await evaluate("document.body.textContent.includes('Pending')")))throw new Error('Submission status did not appear.');
   await evaluate("document.querySelector('.sidebar form').requestSubmit();true");await waitFor("document.querySelector('[name=password]')!==null");
-  await evaluate("document.querySelector('[name=role]').value='admin';document.querySelector('[name=username]').value='admin';document.querySelector('[name=password]').value='VisualTesting@2026';document.querySelector('form').requestSubmit();true");
+  await evaluate("document.querySelector('[name=username]').value='admin';document.querySelector('[name=password]').value='VisualTesting@2026';document.querySelector('form').requestSubmit();true");
+  await waitFor("document.querySelector('[name=action][value=verify_admin_otp]')!==null");
+  const loginCode=totp(adminSecret,1);
+  await evaluate(`document.querySelector('[name=code]').value='${loginCode}';document.querySelector('[name=action][value=verify_admin_otp]').form.requestSubmit();true`);
   await waitFor("document.querySelector('.sidebar')!==null");await navigate('index.php?page=payments');
   await evaluate("document.querySelector('form input[value=review_submission]').closest('details').querySelector('summary').click();true");await screenshot('verification-desktop');
   if(!(await evaluate("document.querySelector('[name=verified]').required")))throw new Error('Review checkbox must be required for approval.');

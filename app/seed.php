@@ -3,14 +3,14 @@ function seed(): void {
     if (one('SELECT id FROM users LIMIT 1')) return;
     db()->beginTransaction();
     try {
-        query('INSERT INTO users(username,password_hash,role,name) VALUES(?,?,?,?)',['admin',password_hash('Admin@12345',PASSWORD_DEFAULT),'admin','Angelina • Administrator']);
-        query('INSERT INTO users(username,password_hash,role,name) VALUES(?,?,?,?)',['staff',password_hash('Staff@12345',PASSWORD_DEFAULT),'staff','Payment Staff']);
+        query('INSERT INTO users(username,email,password_hash,role,name) VALUES(?,?,?,?,?)',['admin','admin@angelinasdormitory.test',password_hash('Admin@12345',PASSWORD_DEFAULT),'admin','Angelina • Landlady']);
+        query('INSERT INTO users(username,email,password_hash,role,name) VALUES(?,?,?,?,?)',['staff','staff@angelinasdormitory.test',password_hash('Staff@12345',PASSWORD_DEFAULT),'staff','Staff']);
         foreach ([['101',4,450000,65000,18000],['102',6,500000,85000,22000],['103',4,500000,110000,28000],['104',2,550000,75000,20000]] as $r) {
             query('INSERT INTO rooms(number,capacity,rent,fixed_electricity,fixed_water) VALUES(?,?,?,?,?)',$r); $id=(int)db()->lastInsertId();
             for($i=1;$i<=$r[1];$i++) query('INSERT INTO bed_spaces(room_id,label) VALUES(?,?)',[$id,'Bed '.$i]);
         }
         query('INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)',['Maria Santos (Demo)','maria@example.com','0917 000 0000',date('Y-m-01')]); $tid=(int)db()->lastInsertId();
-        query('INSERT INTO users(username,password_hash,role,name,tenant_id) VALUES(?,?,?,?,?)',['tenant',password_hash('Tenant@12345',PASSWORD_DEFAULT),'tenant','Maria Santos',$tid]);
+        query('INSERT INTO users(username,email,password_hash,role,name,tenant_id) VALUES(?,?,?,?,?,?)',['tenant','maria@example.com',password_hash('Tenant@12345',PASSWORD_DEFAULT),'tenant','Maria Santos',$tid]);
         query('INSERT INTO tenant_assignments(tenant_id,bed_id,start_date) VALUES(?,?,?)',[$tid,5,date('Y-m-01')]); $aid=(int)db()->lastInsertId();
         query('INSERT INTO billing(tenant_id,assignment_id,period,cutoff,due_date,rent,electricity,water,total_due,created_by) VALUES(?,?,?,?,?,?,?,?,?,1)',[$tid,$aid,date('Y-m'),date('Y-m-15'),date('Y-m-t'),500000,80000,30000,610000]);
         $bid=(int)db()->lastInsertId();

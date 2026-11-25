@@ -1,8 +1,9 @@
--- MariaDB dump 10.19  Distrib 10.4.32-MariaDB, for Win64 (AMD64)
+/*M!999999\- enable the sandbox mode */
+-- MariaDB dump 10.19  Distrib 10.11.16-MariaDB, for Win64 (AMD64)
 --
 -- Host: 127.0.0.1    Database: angelinas_dormitory
 -- ------------------------------------------------------
--- Server version	10.4.32-MariaDB
+-- Server version	10.11.16-MariaDB
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -16,11 +17,109 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
+-- Table structure for table `admin_two_factor`
+--
+
+DROP TABLE IF EXISTS `admin_two_factor`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `admin_two_factor` (
+  `user_id` int(10) unsigned NOT NULL,
+  `secret_ciphertext` varbinary(256) NOT NULL,
+  `enabled_at` datetime NOT NULL,
+  `last_otp_counter` bigint(20) unsigned NOT NULL DEFAULT 0,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`user_id`),
+  CONSTRAINT `admin_two_factor_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `admin_two_factor`
+--
+
+LOCK TABLES `admin_two_factor` WRITE;
+/*!40000 ALTER TABLE `admin_two_factor` DISABLE KEYS */;
+INSERT INTO `admin_two_factor` VALUES
+(1,0x6A45596562637863592B2B4752616B4B6B4577476B6B7632456941724F6B643261597765574D7530767153724159414F5A393555746A4F4A6F6130664368726C6F67386732543033574349474F69695A,'2026-11-22 19:23:29',59847884,'2026-11-22 19:23:29');
+/*!40000 ALTER TABLE `admin_two_factor` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `admin_two_factor_attempts`
+--
+
+DROP TABLE IF EXISTS `admin_two_factor_attempts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `admin_two_factor_attempts` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int(10) unsigned NOT NULL,
+  `identity` char(64) NOT NULL,
+  `attempted_at` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_admin_2fa_user_time` (`user_id`,`attempted_at`),
+  KEY `ix_admin_2fa_identity_time` (`identity`,`attempted_at`),
+  CONSTRAINT `admin_two_factor_attempts_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `admin_two_factor_attempts`
+--
+
+LOCK TABLES `admin_two_factor_attempts` WRITE;
+/*!40000 ALTER TABLE `admin_two_factor_attempts` DISABLE KEYS */;
+/*!40000 ALTER TABLE `admin_two_factor_attempts` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `admin_two_factor_recovery`
+--
+
+DROP TABLE IF EXISTS `admin_two_factor_recovery`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `admin_two_factor_recovery` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int(10) unsigned NOT NULL,
+  `code_hash` char(64) NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_admin_recovery` (`user_id`,`code_hash`),
+  KEY `ix_admin_recovery_unused` (`user_id`,`used_at`),
+  CONSTRAINT `admin_two_factor_recovery_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `admin_two_factor_recovery`
+--
+
+LOCK TABLES `admin_two_factor_recovery` WRITE;
+/*!40000 ALTER TABLE `admin_two_factor_recovery` DISABLE KEYS */;
+INSERT INTO `admin_two_factor_recovery` VALUES
+(1,1,'cb862e66f007a1d69168ea63e6c89b316a292ecdd8230aa7d00fa8ff7113c96f',NULL,'2026-11-22 19:23:29'),
+(2,1,'1e372136c27c4e37ebc215094712d042f6a858c0e0d9a09977f211cf80fec16b',NULL,'2026-11-22 19:23:29'),
+(3,1,'94a4bd55477b1ca5c9b7ec9201e439d52e7df42997c6dce532de27b51c47b848',NULL,'2026-11-22 19:23:29'),
+(4,1,'18efb596a501c675123d39d6a635d1a97f48f8c8de5c358ad2ad8769e1a064af',NULL,'2026-11-22 19:23:29'),
+(5,1,'894797e2501b11e7e9c8930f0dad823a0d95336153d73c5b4746f8b894f5c333',NULL,'2026-11-22 19:23:29'),
+(6,1,'97d570cd9c1bd7adf7bfaccaf01dd7d183897017b9f0499f7cd34bfd69b59be4',NULL,'2026-11-22 19:23:29'),
+(7,1,'8e871fb6b42d0bf0d201c7a6700bde141331bfe4d8074439d9b52d4a8b559c11',NULL,'2026-11-22 19:23:29'),
+(8,1,'55e4f561b1a377a3ad144aef8914a9f0ab99185d37cdaf2809bbf3015ea57a9f',NULL,'2026-11-22 19:23:29'),
+(9,1,'609295c84019de05c904ab4c3505eb8a347279b1fb79f327a00a6fca955f8640',NULL,'2026-11-22 19:23:29'),
+(10,1,'d2eaae652e9f4ce5b3bc6959e156850985ad02bfa35966b4c77278f2b784e716',NULL,'2026-11-22 19:23:29');
+/*!40000 ALTER TABLE `admin_two_factor_recovery` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `announcements`
 --
 
+DROP TABLE IF EXISTS `announcements`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `announcements` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `title` varchar(200) NOT NULL,
@@ -39,15 +138,18 @@ CREATE TABLE `announcements` (
 -- Dumping data for table `announcements`
 --
 
+LOCK TABLES `announcements` WRITE;
 /*!40000 ALTER TABLE `announcements` DISABLE KEYS */;
 /*!40000 ALTER TABLE `announcements` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `audit_logs`
 --
 
+DROP TABLE IF EXISTS `audit_logs`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `audit_logs` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `user_id` int(10) unsigned DEFAULT NULL,
@@ -59,23 +161,79 @@ CREATE TABLE `audit_logs` (
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=74 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=106 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `audit_logs`
 --
 
+LOCK TABLES `audit_logs` WRITE;
 /*!40000 ALTER TABLE `audit_logs` DISABLE KEYS */;
-INSERT INTO `audit_logs` VALUES (1,NULL,'System initialized',NULL,NULL,'Initial rooms and clearly labeled demonstration tenant created.','2026-10-07 13:39:35'),(2,1,'Logged in','',NULL,'','2026-10-07 13:46:27'),(3,1,'Changed own password','',NULL,'','2026-10-07 13:47:44'),(4,1,'Prepared overdue reminders','',NULL,'','2026-10-07 13:48:48'),(5,1,'Logged out','',NULL,'','2026-10-07 13:49:01'),(6,2,'Logged in','',NULL,'','2026-10-07 13:49:18'),(7,2,'Changed own password','',NULL,'','2026-10-07 13:49:42'),(8,2,'Logged out','',NULL,'','2026-10-07 13:49:51'),(9,3,'Logged in','',NULL,'','2026-10-07 13:50:13'),(10,3,'Changed own password','',NULL,'','2026-10-07 13:50:35'),(11,3,'Logged out','',NULL,'','2026-10-07 13:50:51'),(12,1,'Logged in','',NULL,'','2026-10-07 14:20:36'),(13,1,'Logged out','',NULL,'','2026-10-07 14:23:16'),(14,2,'Logged in','',NULL,'','2026-10-07 14:23:26'),(15,2,'Logged out','',NULL,'','2026-10-07 14:23:43'),(16,3,'Logged in','',NULL,'','2026-10-07 14:23:56'),(17,3,'Logged out','',NULL,'','2026-10-07 14:24:12'),(18,NULL,'Tenant self-registered','tenants',2,'','2026-10-07 14:37:05'),(19,4,'Logged in','',NULL,'','2026-10-07 14:37:12'),(20,4,'Logged out','',NULL,'','2026-10-07 14:37:48'),(21,3,'Logged in','',NULL,'','2026-10-07 14:38:03'),(22,3,'Logged out','',NULL,'','2026-10-07 14:38:24'),(23,1,'Logged in','',NULL,'','2026-10-07 14:38:35'),(24,1,'Logged out','',NULL,'','2026-10-07 14:38:53'),(25,4,'Logged in','',NULL,'','2026-10-07 14:39:03'),(26,4,'Logged out','',NULL,'','2026-10-07 14:39:23'),(27,1,'Logged in','',NULL,'','2026-10-07 14:39:34'),(28,1,'Recorded security deposit','deposits',2,'','2026-10-07 14:40:11'),(29,1,'Assigned room to registered tenant','tenants',2,'','2026-10-07 14:40:28'),(30,1,'Logged out','',NULL,'','2026-10-07 14:40:42'),(31,4,'Logged in','',NULL,'','2026-10-07 14:40:55'),(32,4,'Logged out','',NULL,'','2026-10-07 15:03:49'),(33,1,'Logged in','',NULL,'','2026-10-07 15:04:00'),(34,1,'Created billing statement','billing',2,'Previous balance ₱0.00','2026-10-07 15:04:53'),(35,1,'Generated monthly billing batch','billing',NULL,'1 created; 0 skipped (existing/newer statements).','2026-10-07 15:04:53'),(36,1,'Generated monthly billing batch','billing',NULL,'0 created; 1 skipped (existing/newer statements).','2026-10-07 15:05:09'),(37,1,'Logged out','',NULL,'','2026-10-07 15:05:19'),(38,4,'Logged in','',NULL,'','2026-10-07 15:18:21'),(39,4,'Tenant submitted GCash payment for verification','payment_submissions',1,'','2026-10-07 15:18:51'),(40,4,'Logged out','',NULL,'','2026-10-07 15:19:41'),(41,2,'Logged in','',NULL,'','2026-10-07 15:19:58'),(42,2,'Verified submitted payment and generated receipt','payments',1,'','2026-10-07 15:21:05'),(43,2,'Reviewed tenant payment submission','payment_submissions',1,'approved · ','2026-10-07 15:21:05'),(44,2,'Logged out','',NULL,'','2026-10-07 15:21:18'),(45,1,'Logged in','',NULL,'','2026-10-07 15:21:28'),(46,1,'Logged out','',NULL,'','2026-10-07 15:39:20'),(47,4,'Logged in','',NULL,'','2026-10-07 15:39:33'),(48,4,'Tenant sent inquiry','tenant_inquiries',1,'','2026-10-07 15:40:33'),(49,4,'Logged out','',NULL,'','2026-10-07 15:40:44'),(50,1,'Logged in','',NULL,'','2026-10-07 15:40:57'),(51,1,'Updated tenant payment instructions','',NULL,'','2026-10-07 15:42:29'),(52,1,'Updated dormitory settings','',NULL,'','2026-10-07 15:42:56'),(53,1,'Created billing statement','billing',3,'Previous balance ₱0.00','2026-10-07 16:04:22'),(54,1,'Logged out','',NULL,'','2026-10-07 16:04:49'),(55,4,'Logged in','',NULL,'','2026-10-07 16:05:06'),(56,4,'Logged out','',NULL,'','2026-10-07 16:05:58'),(57,NULL,'Tenant self-registered','tenants',3,'','2026-10-07 16:07:16'),(58,5,'Logged in','',NULL,'','2026-10-07 16:07:22'),(59,5,'Logged out','',NULL,'','2026-10-07 16:07:30'),(60,1,'Logged in','',NULL,'','2026-10-07 16:07:41'),(61,1,'Assigned room to registered tenant','tenants',3,'','2026-10-07 16:07:54'),(62,1,'Logged out','',NULL,'','2026-10-07 16:09:31'),(63,5,'Logged in','',NULL,'','2026-10-07 16:09:40'),(64,5,'Logged out','',NULL,'','2026-10-07 16:10:04'),(65,1,'Logged in','',NULL,'','2026-10-07 16:10:13'),(66,1,'Created billing statement','billing',4,'Previous balance ₱0.00','2026-10-07 16:11:22'),(67,1,'Logged out','',NULL,'','2026-10-07 16:11:48'),(68,5,'Logged in','',NULL,'','2026-10-07 16:12:00'),(69,5,'Tenant submitted GCash payment for verification','payment_submissions',2,'','2026-10-07 16:12:50'),(70,5,'Logged out','',NULL,'','2026-10-07 16:13:01'),(71,1,'Logged in','',NULL,'','2026-10-07 16:13:13'),(72,1,'Verified submitted payment and generated receipt','payments',2,'','2026-10-07 16:13:32'),(73,1,'Reviewed tenant payment submission','payment_submissions',2,'approved · ','2026-10-07 16:13:32');
+INSERT INTO `audit_logs` VALUES
+(1,NULL,'System initialized',NULL,NULL,'Initial rooms and clearly labeled demonstration tenant created.','2026-10-07 13:39:35'),
+(2,1,'Logged in','',NULL,'','2026-10-07 13:46:27'),
+(3,1,'Changed own password','',NULL,'','2026-10-07 13:47:44'),
+(4,1,'Prepared overdue reminders','',NULL,'','2026-10-07 13:48:48'),
+(5,1,'Logged out','',NULL,'','2026-10-07 13:49:01'),
+(6,2,'Logged in','',NULL,'','2026-10-07 13:49:18'),
+(7,2,'Changed own password','',NULL,'','2026-10-07 13:49:42'),
+(8,2,'Logged out','',NULL,'','2026-10-07 13:49:51'),
+(12,1,'Logged in','',NULL,'','2026-10-07 14:20:36'),
+(13,1,'Logged out','',NULL,'','2026-10-07 14:23:16'),
+(14,2,'Logged in','',NULL,'','2026-10-07 14:23:26'),
+(15,2,'Logged out','',NULL,'','2026-10-07 14:23:43'),
+(23,1,'Logged in','',NULL,'','2026-10-07 14:38:35'),
+(24,1,'Logged out','',NULL,'','2026-10-07 14:38:53'),
+(27,1,'Logged in','',NULL,'','2026-10-07 14:39:34'),
+(30,1,'Logged out','',NULL,'','2026-10-07 14:40:42'),
+(33,1,'Logged in','',NULL,'','2026-10-07 15:04:00'),
+(37,1,'Logged out','',NULL,'','2026-10-07 15:05:19'),
+(41,2,'Logged in','',NULL,'','2026-10-07 15:19:58'),
+(44,2,'Logged out','',NULL,'','2026-10-07 15:21:18'),
+(45,1,'Logged in','',NULL,'','2026-10-07 15:21:28'),
+(46,1,'Logged out','',NULL,'','2026-10-07 15:39:20'),
+(50,1,'Logged in','',NULL,'','2026-10-07 15:40:57'),
+(51,1,'Updated tenant payment instructions','',NULL,'','2026-10-07 15:42:29'),
+(52,1,'Updated dormitory settings','',NULL,'','2026-10-07 15:42:56'),
+(54,1,'Logged out','',NULL,'','2026-10-07 16:04:49'),
+(60,1,'Logged in','',NULL,'','2026-10-07 16:07:41'),
+(62,1,'Logged out','',NULL,'','2026-10-07 16:09:31'),
+(65,1,'Logged in','',NULL,'','2026-10-07 16:10:13'),
+(67,1,'Logged out','',NULL,'','2026-10-07 16:11:48'),
+(71,1,'Logged in','',NULL,'','2026-10-07 16:13:13'),
+(74,1,'Logged in','',NULL,'','2026-11-22 17:27:04'),
+(81,1,'Logged out','',NULL,'','2026-11-22 17:45:48'),
+(85,1,'Logged in','',NULL,'','2026-11-22 18:13:08'),
+(86,1,'Logged in with two-factor authentication','',NULL,'','2026-11-22 19:23:29'),
+(87,1,'Enabled admin two-factor authentication','',NULL,'','2026-11-22 19:23:29'),
+(88,1,'Logged out','',NULL,'','2026-11-22 19:24:30'),
+(89,1,'Logged in with two-factor authentication','',NULL,'','2026-11-22 19:24:57'),
+(90,1,'Logged in with two-factor authentication','',NULL,'','2026-11-23 07:32:59'),
+(91,1,'Logged out','',NULL,'','2026-11-23 07:33:12'),
+(92,1,'Logged in with two-factor authentication','',NULL,'','2026-11-23 07:34:09'),
+(93,1,'Logged out','',NULL,'','2026-11-23 07:35:04'),
+(94,2,'Logged in','',NULL,'','2026-11-23 07:35:38'),
+(95,2,'Logged out','',NULL,'','2026-11-23 07:36:15'),
+(96,1,'Logged in with two-factor authentication','',NULL,'','2026-11-23 07:38:20'),
+(97,1,'Logged in with two-factor authentication','',NULL,'','2026-11-23 08:09:12'),
+(98,1,'Logged out','',NULL,'','2026-11-23 08:10:03'),
+(99,1,'Logged in with two-factor authentication','',NULL,'','2026-11-23 09:10:30'),
+(100,2,'Logged in','',NULL,'','2026-11-23 12:21:07'),
+(101,2,'Logged out','',NULL,'','2026-11-23 12:21:12'),
+(102,1,'Logged in with two-factor authentication','',NULL,'','2026-11-23 12:22:11'),
+(104,1,'Updated account email','users',1,'','2026-11-23 15:05:38'),
+(105,1,'Updated account email','users',2,'','2026-11-23 15:06:03');
 /*!40000 ALTER TABLE `audit_logs` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `bed_spaces`
 --
 
+DROP TABLE IF EXISTS `bed_spaces`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `bed_spaces` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `room_id` int(10) unsigned NOT NULL,
@@ -90,16 +248,18 @@ CREATE TABLE `bed_spaces` (
 -- Dumping data for table `bed_spaces`
 --
 
+LOCK TABLES `bed_spaces` WRITE;
 /*!40000 ALTER TABLE `bed_spaces` DISABLE KEYS */;
-INSERT INTO `bed_spaces` VALUES (1,1,'Bed 1'),(2,1,'Bed 2'),(3,1,'Bed 3'),(4,1,'Bed 4'),(5,2,'Bed 1'),(6,2,'Bed 2'),(7,2,'Bed 3'),(8,2,'Bed 4'),(9,2,'Bed 5'),(10,2,'Bed 6'),(11,3,'Bed 1'),(12,3,'Bed 2'),(13,3,'Bed 3'),(14,3,'Bed 4'),(15,4,'Bed 1'),(16,4,'Bed 2');
 /*!40000 ALTER TABLE `bed_spaces` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `billing`
 --
 
+DROP TABLE IF EXISTS `billing`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `billing` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tenant_id` int(10) unsigned NOT NULL,
@@ -132,16 +292,18 @@ CREATE TABLE `billing` (
 -- Dumping data for table `billing`
 --
 
+LOCK TABLES `billing` WRITE;
 /*!40000 ALTER TABLE `billing` DISABLE KEYS */;
-INSERT INTO `billing` VALUES (1,1,1,'2026-10','2026-10-15','2026-10-31',500000,80000,30000,0,610000,NULL,1,'2026-10-07 13:39:35'),(2,2,2,'2026-10','2026-10-15','2026-10-28',450000,25000,0,0,475000,NULL,1,'2026-10-07 15:04:53'),(3,2,2,'2026-11','2026-11-15','2026-11-28',450000,0,0,0,450000,NULL,1,'2026-10-07 16:04:22'),(4,3,3,'2026-10','2026-10-15','2026-10-28',450000,20000,14993,0,484993,NULL,1,'2026-10-07 16:11:22');
 /*!40000 ALTER TABLE `billing` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `billing_adjustments`
 --
 
+DROP TABLE IF EXISTS `billing_adjustments`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `billing_adjustments` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `billing_id` int(10) unsigned NOT NULL,
@@ -162,15 +324,18 @@ CREATE TABLE `billing_adjustments` (
 -- Dumping data for table `billing_adjustments`
 --
 
+LOCK TABLES `billing_adjustments` WRITE;
 /*!40000 ALTER TABLE `billing_adjustments` DISABLE KEYS */;
 /*!40000 ALTER TABLE `billing_adjustments` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `deposits`
 --
 
+DROP TABLE IF EXISTS `deposits`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `deposits` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tenant_id` int(10) unsigned NOT NULL,
@@ -193,16 +358,18 @@ CREATE TABLE `deposits` (
 -- Dumping data for table `deposits`
 --
 
+LOCK TABLES `deposits` WRITE;
 /*!40000 ALTER TABLE `deposits` DISABLE KEYS */;
-INSERT INTO `deposits` VALUES (1,1,500000,'2026-10-01',NULL,NULL,NULL,1,'2026-10-07 13:39:35'),(2,2,500000,'2026-10-07',NULL,NULL,NULL,1,'2026-10-07 14:40:11');
 /*!40000 ALTER TABLE `deposits` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `expenses`
 --
 
+DROP TABLE IF EXISTS `expenses`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `expenses` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `category` enum('Utilities','Maintenance','Supplies','Salaries','Other') NOT NULL,
@@ -231,38 +398,43 @@ CREATE TABLE `expenses` (
 -- Dumping data for table `expenses`
 --
 
+LOCK TABLES `expenses` WRITE;
 /*!40000 ALTER TABLE `expenses` DISABLE KEYS */;
 /*!40000 ALTER TABLE `expenses` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `login_attempts`
 --
 
+DROP TABLE IF EXISTS `login_attempts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `login_attempts` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `identity` char(64) NOT NULL,
   `attempted_at` bigint(20) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `identity` (`identity`,`attempted_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `login_attempts`
 --
 
+LOCK TABLES `login_attempts` WRITE;
 /*!40000 ALTER TABLE `login_attempts` DISABLE KEYS */;
-INSERT INTO `login_attempts` VALUES (2,'b15bc0801ebea329c34a13b8792dff711558fdccf6750a59182c15f34521c6c0',1791389235);
 /*!40000 ALTER TABLE `login_attempts` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `maintenance_requests`
 --
 
+DROP TABLE IF EXISTS `maintenance_requests`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `maintenance_requests` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tenant_id` int(10) unsigned NOT NULL,
@@ -286,15 +458,18 @@ CREATE TABLE `maintenance_requests` (
 -- Dumping data for table `maintenance_requests`
 --
 
+LOCK TABLES `maintenance_requests` WRITE;
 /*!40000 ALTER TABLE `maintenance_requests` DISABLE KEYS */;
 /*!40000 ALTER TABLE `maintenance_requests` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `notifications`
 --
 
+DROP TABLE IF EXISTS `notifications`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `notifications` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tenant_id` int(10) unsigned NOT NULL,
@@ -314,23 +489,25 @@ CREATE TABLE `notifications` (
   KEY `billing_id` (`billing_id`),
   CONSTRAINT `notifications_ibfk_1` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`),
   CONSTRAINT `notifications_ibfk_2` FOREIGN KEY (`billing_id`) REFERENCES `billing` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=638 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `notifications`
 --
 
+LOCK TABLES `notifications` WRITE;
 /*!40000 ALTER TABLE `notifications` DISABLE KEYS */;
-INSERT INTO `notifications` VALUES (1,2,2,'billing','cas@gmail.com','Your billing statement is ready','Billing period: 2026-10. Amount due: ₱4,750.00. Due date: 2026-10-28.','queued',NULL,NULL,'2026-10-07 15:04:53',NULL),(2,2,2,'submission','cas@gmail.com','Payment submission received','Your ₱4,750.00 GCash submission (reference 4555554445) is pending staff verification. Your balance changes after verification.','queued',NULL,NULL,'2026-10-07 15:18:51',NULL),(3,2,2,'receipt','cas@gmail.com','Payment receipt AD-000001','GCash payment verified: ₱4,750.00. Remaining balance: ₱0.00. Reference: 4555554445.','queued',NULL,NULL,'2026-10-07 15:21:05',NULL),(4,2,3,'billing','cas@gmail.com','Your billing statement is ready','Billing period: 2026-11. Amount due: ₱4,500.00. Due date: 2026-11-28.','queued',NULL,NULL,'2026-10-07 16:04:22',NULL),(5,3,4,'billing','cj@gmail.com','Your billing statement is ready','Billing period: 2026-10. Amount due: ₱4,849.93. Due date: 2026-10-28.','queued',NULL,NULL,'2026-10-07 16:11:22',NULL),(6,3,4,'submission','cj@gmail.com','Payment submission received','Your ₱4,849.93 GCash submission (reference 455664555) is pending staff verification. Your balance changes after verification.','queued',NULL,NULL,'2026-10-07 16:12:50',NULL),(7,3,4,'receipt','cj@gmail.com','Payment receipt AD-000002','GCash payment verified: ₱4,849.93. Remaining balance: ₱0.00. Reference: 455664555.','queued',NULL,NULL,'2026-10-07 16:13:32',NULL);
 /*!40000 ALTER TABLE `notifications` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `occupancy_scans`
 --
 
+DROP TABLE IF EXISTS `occupancy_scans`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `occupancy_scans` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `room_id` int(10) unsigned NOT NULL,
@@ -346,22 +523,25 @@ CREATE TABLE `occupancy_scans` (
   KEY `scanned_by` (`scanned_by`),
   CONSTRAINT `occupancy_scans_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
   CONSTRAINT `occupancy_scans_ibfk_2` FOREIGN KEY (`scanned_by`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `occupancy_scans`
 --
 
+LOCK TABLES `occupancy_scans` WRITE;
 /*!40000 ALTER TABLE `occupancy_scans` DISABLE KEYS */;
 /*!40000 ALTER TABLE `occupancy_scans` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `payment_submissions`
 --
 
+DROP TABLE IF EXISTS `payment_submissions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `payment_submissions` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tenant_id` int(10) unsigned NOT NULL,
@@ -398,16 +578,18 @@ CREATE TABLE `payment_submissions` (
 -- Dumping data for table `payment_submissions`
 --
 
+LOCK TABLES `payment_submissions` WRITE;
 /*!40000 ALTER TABLE `payment_submissions` DISABLE KEYS */;
-INSERT INTO `payment_submissions` VALUES (1,2,2,475000,'Cassandra','2026-10-07','4555554445',NULL,'','approved','4555554445','efe449bdd88ee1bdecbab0fdacb7864b',1,2,'','2026-10-07 15:21:05','2026-10-07 15:18:51'),(2,3,4,484993,'CJ','2026-10-08','455664555',NULL,'','approved','455664555','469c2c2bf34f8cbb35d08f002569f8ac',2,1,'','2026-10-07 16:13:32','2026-10-07 16:12:50');
 /*!40000 ALTER TABLE `payment_submissions` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `payments`
 --
 
+DROP TABLE IF EXISTS `payments`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `payments` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `billing_id` int(10) unsigned NOT NULL,
@@ -444,22 +626,26 @@ CREATE TABLE `payments` (
 -- Dumping data for table `payments`
 --
 
+LOCK TABLES `payments` WRITE;
 /*!40000 ALTER TABLE `payments` DISABLE KEYS */;
-INSERT INTO `payments` VALUES (1,2,2,475000,'GCash','Cassandra','2026-10-07','4555554445',2,'submission-1',0,NULL,NULL,NULL,'4555554445','2026-10-07 15:21:05'),(2,4,3,484993,'GCash','CJ','2026-10-08','455664555',1,'submission-2',0,NULL,NULL,NULL,'455664555','2026-10-07 16:13:32');
 /*!40000 ALTER TABLE `payments` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `rooms`
 --
 
+DROP TABLE IF EXISTS `rooms`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `rooms` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `number` varchar(50) NOT NULL,
   `capacity` int(11) NOT NULL CHECK (`capacity` between 1 and 30),
   `rent` bigint(20) NOT NULL CHECK (`rent` >= 0),
   `status` enum('active','maintenance') DEFAULT 'active',
+  `fixed_electricity` bigint(20) DEFAULT NULL CHECK (`fixed_electricity` >= 0),
+  `fixed_water` bigint(20) DEFAULT NULL CHECK (`fixed_water` >= 0),
   PRIMARY KEY (`id`),
   UNIQUE KEY `number` (`number`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -469,16 +655,18 @@ CREATE TABLE `rooms` (
 -- Dumping data for table `rooms`
 --
 
+LOCK TABLES `rooms` WRITE;
 /*!40000 ALTER TABLE `rooms` DISABLE KEYS */;
-INSERT INTO `rooms` VALUES (1,'101',4,450000,'active'),(2,'102',6,500000,'active'),(3,'103',4,500000,'active'),(4,'104',2,550000,'active');
 /*!40000 ALTER TABLE `rooms` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `settings`
 --
 
+DROP TABLE IF EXISTS `settings`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `settings` (
   `key` varchar(80) NOT NULL,
   `value` text NOT NULL,
@@ -490,16 +678,29 @@ CREATE TABLE `settings` (
 -- Dumping data for table `settings`
 --
 
+LOCK TABLES `settings` WRITE;
 /*!40000 ALTER TABLE `settings` DISABLE KEYS */;
-INSERT INTO `settings` VALUES ('business_address','Brgy. Bucana, Nasugbu, Batangas'),('business_contact','09635145864'),('business_name','Angelina’s Dormitory'),('cutoff_day','15'),('due_day','28'),('gcash_name','Angelina'),('gcash_number','09635145864'),('office_hours','8:00-5:00'),('payment_instructions',''),('seeded','1');
+INSERT INTO `settings` VALUES
+('business_address','Brgy. Bucana, Nasugbu, Batangas'),
+('business_contact','09635145864'),
+('business_name','Angelina’s Dormitory'),
+('cutoff_day','15'),
+('due_day','28'),
+('gcash_name','Angelina'),
+('gcash_number','09635145864'),
+('office_hours','8:00-5:00'),
+('payment_instructions',''),
+('seeded','1');
 /*!40000 ALTER TABLE `settings` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `tenant_assignments`
 --
 
+DROP TABLE IF EXISTS `tenant_assignments`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `tenant_assignments` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tenant_id` int(10) unsigned NOT NULL,
@@ -522,16 +723,18 @@ CREATE TABLE `tenant_assignments` (
 -- Dumping data for table `tenant_assignments`
 --
 
+LOCK TABLES `tenant_assignments` WRITE;
 /*!40000 ALTER TABLE `tenant_assignments` DISABLE KEYS */;
-INSERT INTO `tenant_assignments` VALUES (1,1,5,'2026-10-01',NULL,5,1),(2,2,1,'2026-10-07',NULL,1,2),(3,3,2,'2026-10-08',NULL,2,3);
 /*!40000 ALTER TABLE `tenant_assignments` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `tenant_inquiries`
 --
 
+DROP TABLE IF EXISTS `tenant_inquiries`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `tenant_inquiries` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tenant_id` int(10) unsigned NOT NULL,
@@ -555,16 +758,18 @@ CREATE TABLE `tenant_inquiries` (
 -- Dumping data for table `tenant_inquiries`
 --
 
+LOCK TABLES `tenant_inquiries` WRITE;
 /*!40000 ALTER TABLE `tenant_inquiries` DISABLE KEYS */;
-INSERT INTO `tenant_inquiries` VALUES (1,2,'Other','concerns','walang tubig','open',NULL,NULL,NULL,'2026-10-07 15:40:33');
 /*!40000 ALTER TABLE `tenant_inquiries` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `tenants`
 --
 
+DROP TABLE IF EXISTS `tenants`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `tenants` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(200) NOT NULL,
@@ -582,19 +787,22 @@ CREATE TABLE `tenants` (
 -- Dumping data for table `tenants`
 --
 
+LOCK TABLES `tenants` WRITE;
 /*!40000 ALTER TABLE `tenants` DISABLE KEYS */;
-INSERT INTO `tenants` VALUES (1,'Maria Santos (Demo)','maria@example.com','0917 000 0000','active','2026-10-01',NULL,'2026-10-07 13:39:35'),(2,'Cassandra','cas@gmail.com','098765432442','active','2026-10-07',NULL,'2026-10-07 14:37:04'),(3,'CJ','cj@gmail.com','09456364011','active','2026-10-08',NULL,'2026-10-07 16:07:15');
 /*!40000 ALTER TABLE `tenants` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `users`
 --
 
+DROP TABLE IF EXISTS `users`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `users` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `username` varchar(100) NOT NULL,
+  `email` varchar(254) DEFAULT NULL,
   `password_hash` varchar(255) NOT NULL,
   `role` enum('admin','staff','tenant') NOT NULL,
   `name` varchar(200) NOT NULL,
@@ -604,6 +812,7 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   UNIQUE KEY `tenant_id` (`tenant_id`),
+  UNIQUE KEY `uq_users_email` (`email`),
   CONSTRAINT `users_ibfk_1` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -612,16 +821,21 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
+LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (1,'admin','$2y$12$duCHWxG7edRNOkje1UdCse5At.HdChfJ7kgo3Kc7ImovAFgzXDrSi','admin','Angelina • Administrator',NULL,1,0),(2,'staff','$2y$12$QwoWqND8DOWsCTCPHbwB7.p89ARl1.rdYvoykQmCa6TEj5HBj8eLK','staff','Payment Staff',NULL,1,0),(3,'tenant','$2y$12$p4IfuP35fEN5QDDmM1XOE.XQyiwU2QmTskOVQvP.ZmwMv5ccM52v2','tenant','Maria Santos',1,1,0),(4,'cassandra','$2y$12$VXvzKqhov61HeOtCcwFu8.YlXQXW50iDcL/.VypAhmCYVx35p/WhS','tenant','Cassandra',2,1,0),(5,'cjohn','$2y$12$6Nsb//BdkGLE1EYA1gAhAuyd8noc7jRCP0lSXJGhvIew6dSgU0eh6','tenant','CJ',3,1,0);
+INSERT INTO `users` VALUES
+(1,'admin','angelinarivera@gmail.com','$2y$12$duCHWxG7edRNOkje1UdCse5At.HdChfJ7kgo3Kc7ImovAFgzXDrSi','admin','Angelina • Administrator',NULL,1,0),
+(2,'staff','nadineenriquez@gmail.com','$2y$12$QwoWqND8DOWsCTCPHbwB7.p89ARl1.rdYvoykQmCa6TEj5HBj8eLK','staff','Payment Staff',NULL,1,0);
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Table structure for table `utility_charges`
 --
 
+DROP TABLE IF EXISTS `utility_charges`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `utility_charges` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `billing_id` int(10) unsigned NOT NULL,
@@ -637,9 +851,14 @@ CREATE TABLE `utility_charges` (
 -- Dumping data for table `utility_charges`
 --
 
+LOCK TABLES `utility_charges` WRITE;
 /*!40000 ALTER TABLE `utility_charges` DISABLE KEYS */;
-INSERT INTO `utility_charges` VALUES (1,1,'electricity',80000),(2,1,'water',30000),(3,2,'electricity',25000),(4,2,'water',0),(5,3,'electricity',0),(6,3,'water',0),(7,4,'electricity',20000),(8,4,'water',14993);
 /*!40000 ALTER TABLE `utility_charges` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Dumping routines for database 'angelinas_dormitory'
+--
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -650,4 +869,4 @@ INSERT INTO `utility_charges` VALUES (1,1,'electricity',80000),(2,1,'water',3000
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-08  0:26:42
+-- Dump completed on 2026-11-23 23:27:12

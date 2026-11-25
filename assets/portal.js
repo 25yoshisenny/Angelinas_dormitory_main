@@ -16,4 +16,129 @@ if(qrStart){
 }
 
 const paymentChoice=document.querySelector('[name="payment_choice"]');
-if(paymentChoice){const updatePaymentMethod=()=>{const method=paymentChoice.value;document.querySelectorAll('[data-payment-panel]').forEach(panel=>panel.hidden=!panel.dataset.paymentPanel.split(' ').includes(method));document.querySelectorAll('[data-qr-panel]').forEach(panel=>panel.hidden=method!=='qr');document.querySelectorAll('[data-digital-submission]').forEach(panel=>{const digital=['gcash','qr'].includes(method);panel.hidden=!digital;panel.querySelectorAll('input,select,textarea,button').forEach(field=>field.disabled=!digital);const channel=panel.querySelector('[name="payment_channel"]');if(channel)channel.value=method;});document.dispatchEvent(new Event('paymentmethodchange'));};paymentChoice.addEventListener('change',updatePaymentMethod);updatePaymentMethod();}
+if(paymentChoice){const recipient=document.querySelector('[name="payment_recipient"]');const updatePaymentMethod=()=>{const method=paymentChoice.value,digital=method==='gcash';document.querySelectorAll('[data-payment-panel]').forEach(panel=>panel.hidden=!panel.dataset.paymentPanel.split(' ').includes(method));document.querySelectorAll('[data-qr-panel]').forEach(panel=>panel.hidden=!digital);document.querySelectorAll('[data-digital-submission]').forEach(panel=>{panel.hidden=!digital;panel.querySelectorAll('input,select,textarea,button').forEach(field=>field.disabled=!digital);const channel=panel.querySelector('[name="payment_channel"]');if(channel)channel.value='gcash';});if(recipient){recipient.value=digital?'landlady':'staff';recipient.querySelectorAll('option').forEach(option=>{option.disabled=option.value!==(digital?'landlady':'staff');});}document.dispatchEvent(new Event('paymentmethodchange'));};paymentChoice.addEventListener('change',updatePaymentMethod);updatePaymentMethod();}
+
+(() => {
+ const startButton=document.getElementById('tenant-qr-start');
+ if(!startButton)return;
+ const panel=document.getElementById('tenant-qr-scanner'),video=document.getElementById('tenant-qr-video'),canvas=document.getElementById('tenant-qr-canvas'),stopButton=document.getElementById('tenant-qr-stop'),camera=document.getElementById('tenant-qr-camera'),file=document.getElementById('tenant-qr-file'),status=document.getElementById('tenant-qr-status'),result=document.getElementById('tenant-qr-result');
+ let stream=null,running=false,generation=0;
+ const stop=()=>{generation++;running=false;stream?.getTracks().forEach(track=>track.stop());stream=null;video.srcObject=null;video.hidden=true;startButton.disabled=false;stopButton.disabled=true;camera.disabled=false;};
+ const clear=()=>{result.replaceChildren();result.hidden=true;};
+ const decode=image=>{
+  const width=image.videoWidth||image.naturalWidth,height=image.videoHeight||image.naturalHeight;
+  if(!width||!height)return null;
+  if(typeof window.jsQR!=='function')throw new Error('QR scanner is unavailable. Reload the page and try again.');
+  const scale=Math.min(1,1800/Math.max(width,height));
+  canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);
+  const context=canvas.getContext('2d',{willReadFrequently:true});
+  context.drawImage(image,0,0,canvas.width,canvas.height);
+  const pixels=context.getImageData(0,0,canvas.width,canvas.height);
+  return window.jsQR(pixels.data,pixels.width,pixels.height,{inversionAttempts:'attemptBoth'})?.data||null;
+ };
+ const addDetail=(list,label,value)=>{
+  const wrapper=document.createElement('div'),term=document.createElement('dt'),description=document.createElement('dd');
+  term.textContent=label;description.textContent=value;wrapper.append(term,description);list.append(wrapper);
+ };
+ const renderAccount=data=>{
+  const heading=document.createElement('h3');heading.textContent='Tenant Information';
+  const tenantList=document.createElement('dl');tenantList.className='tenant-qr-details';
+  addDetail(tenantList,'Name',data.tenant.name);
+  addDetail(tenantList,'Tenant ID',String(data.tenant.id));
+  addDetail(tenantList,'Room',data.tenant.room||'Unassigned');
+  addDetail(tenantList,'Bed',data.tenant.bed||'Unassigned');
+  result.append(heading,tenantList);
+
+  const bill=data.current_bill;
+  const billHeading=document.createElement('h3');billHeading.textContent='Current Bill';
+  result.append(billHeading);
+  if(!bill){
+   const empty=document.createElement('p');empty.textContent='No current bill is available.';result.append(empty);
+  }else{
+   const billList=document.createElement('dl');billList.className='tenant-qr-details';
+   addDetail(billList,'Billing Period',bill.period);
+   addDetail(billList,'Rent',formatMoney(bill.rent));
+   addDetail(billList,'Water',formatMoney(bill.water));
+   addDetail(billList,'Electricity',formatMoney(bill.electricity));
+   addDetail(billList,'Other charges',formatMoney(bill.other_charges));
+   addDetail(billList,'Previous balance',formatMoney(bill.previous_balance));
+   addDetail(billList,'Discounts',formatMoney(bill.discounts));
+   addDetail(billList,'Total Amount Due',formatMoney(bill.total_due));
+   addDetail(billList,'Total Paid (verified)',formatMoney(bill.total_paid));
+   addDetail(billList,'Remaining Balance',formatMoney(bill.remaining_balance));
+   addDetail(billList,'Payment Status',bill.payment_status);
+   result.append(billList);
+  }
+
+  const historyHeading=document.createElement('h3');historyHeading.textContent='Payment History';
+  result.append(historyHeading);
+  if(!data.payment_history.length){
+   const empty=document.createElement('p');empty.textContent='No verified payments yet.';result.append(empty);
+   return;
+  }
+  const table=document.createElement('table'),thead=document.createElement('thead'),headerRow=document.createElement('tr'),tbody=document.createElement('tbody');
+  ['Billing Period','Date','Amount','Method'].forEach(label=>{const th=document.createElement('th');th.textContent=label;headerRow.append(th);});
+  thead.append(headerRow);
+  data.payment_history.forEach(payment=>{
+   const row=document.createElement('tr');
+   [payment.period,payment.payment_date,formatMoney(payment.amount),payment.method].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell);});
+   tbody.append(row);
+  });
+  table.append(thead,tbody);result.append(table);
+ };
+ const formatMoney=value=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value||0)/100);
+ const verify=async payload=>{
+  stop();clear();
+  if(!payload.startsWith('ADQR1:')){status.textContent='This is not a tenant QR code. Scan the QR card provided by Admin.';return;}
+  status.textContent='Verifying QR code and loading your account...';
+  try{
+   const response=await fetch('index.php?tenant_qr_lookup=1',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-Token':panel.dataset.tenantQrCsrf},body:new URLSearchParams({token:payload}),cache:'no-store'});
+   const data=await response.json();
+   if(!response.ok)throw new Error(data.error||'The QR code could not be verified.');
+   renderAccount(data);result.hidden=false;status.textContent='QR verified. Only information for your signed-in account is shown.';
+  }catch(error){status.textContent=error.message||'The QR code could not be verified. Try again.';}
+ };
+ const start=async()=>{
+  stop();clear();const attempt=generation;
+  startButton.disabled=true;stopButton.disabled=false;camera.disabled=true;status.textContent='Requesting camera access...';
+  try{
+   if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Camera access needs localhost or HTTPS. Choose a QR image instead.');
+   let incoming;
+   try{incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:camera.value},width:{ideal:1280},height:{ideal:720}}});}
+   catch(error){if(!['OverconstrainedError','NotFoundError'].includes(error.name))throw error;incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:true});}
+   if(attempt!==generation){incoming.getTracks().forEach(track=>track.stop());return;}
+   stream=incoming;video.srcObject=stream;video.hidden=false;await video.play();
+   if(attempt!==generation)return;
+   running=true;status.textContent='Hold the complete tenant QR code steady in the camera view.';
+   const scan=()=>{
+    if(!running||attempt!==generation)return;
+    try{const payload=decode(video);if(payload){void verify(payload);return;}}
+    catch(error){stop();status.textContent=error.message;return;}
+    setTimeout(scan,180);
+   };
+   scan();
+  }catch(error){
+   if(attempt!==generation)return;
+   stop();
+   status.textContent=error.name==='NotAllowedError'?'Camera permission was denied. Allow camera access or choose a QR image instead.':error.name==='NotReadableError'?'The camera is busy or unavailable. Close other camera apps and try again.':error.name==='NotFoundError'?'No usable camera was found. Choose a QR image instead.':error.message;
+  }
+ };
+ startButton.addEventListener('click',start);
+ stopButton.addEventListener('click',()=>{stop();status.textContent='Camera stopped.';});
+ camera.addEventListener('change',()=>{stop();status.textContent='Camera selection updated. Start the scanner again.';});
+ file.addEventListener('change',async()=>{
+  stop();clear();const attempt=generation,selected=file.files[0];if(!selected)return;
+  if(selected.size>5*1024*1024){status.textContent='Choose an image smaller than 5 MB.';return;}
+  status.textContent='Reading QR image...';const url=URL.createObjectURL(selected);
+  try{
+   const image=new Image();image.src=url;await image.decode();
+   if(attempt!==generation)return;
+   const payload=decode(image);
+   if(payload)await verify(payload);
+   else status.textContent='No readable QR found. Choose a clear image of the complete QR code.';
+  }catch(error){if(attempt===generation)status.textContent=error.message||'The image could not be scanned.';}
+  finally{URL.revokeObjectURL(url);}
+ });
+ window.addEventListener('pagehide',stop);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden&&running){stop();status.textContent='Camera paused. Start the scanner again when ready.';}});
+})();

@@ -2,3 +2,4 @@
 !/storage/.htaccess
 /config.local.php
 /config.database.php
+/vendor/

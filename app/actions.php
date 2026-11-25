@@ -8,14 +8,23 @@ function tenant_credentials(bool $temporary=true): array {
     if($password!==($_POST['confirm_password']??'')) throw new RuntimeException('The passwords do not match.');
     return [$username,$password];
 }
+function account_email(string $email, ?int $exceptUser=null): string {
+    $email=trim($email);
+    if(strlen($email)>254 || !filter_var($email,FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid email address.');
+    if(one('SELECT id FROM users WHERE email=? AND id<>?',[$email,$exceptUser??0])) throw new RuntimeException('That email address is already assigned to another account.');
+    return $email;
+}
 function handle_action(): void {
     if ($_SERVER['REQUEST_METHOD']!=='POST') return;
     $action=(string)($_POST['action']??'');
     $return=(string)($_POST['return_page']??'dashboard');
+    if($action==='verify_admin_otp') $return='otp';
+    if(in_array($action,['confirm_admin_2fa_setup','disable_admin_2fa','regenerate_admin_recovery'],true)) $return='security';
     if($return==='verification') $return='payments';
     if($action==='register') $return='register';
     if (!hash_equals(token(),(string)($_POST['csrf']??''))) { http_response_code(419); exit('Your session expired. Reload this page and try again.'); }
     try {
+        if(admin_two_factor_handle_action($action)) return;
         if($action==='public_contact') {
             $return='home';$identity=hash('sha256','public-contact|'.($_SERVER['REMOTE_ADDR']??'local'));
             query('DELETE FROM login_attempts WHERE attempted_at < ?',[time()-900]);
@@ -39,24 +48,38 @@ function handle_action(): void {
             if(strlen($name)>200 || strlen($email)>254 || strlen($contact)>80) throw new RuntimeException('Your name, email, or contact number is too long.');
             if(!filter_var($email,FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid email address.');
             if(one('SELECT id FROM tenants WHERE email=?',[$email])) throw new RuntimeException('This email already has a tenant record. Sign in with your existing account or contact the dormitory for help.');
+            $email=account_email($email);
             query('INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)',[$name,$email,$contact,date('Y-m-d')]); $id=(int)db()->lastInsertId();
-            query("INSERT INTO users(username,password_hash,role,name,tenant_id,must_change) VALUES(?,?,'tenant',?,?,0)",[$username,password_hash($password,PASSWORD_DEFAULT),$name,$id]);
+            query("INSERT INTO users(username,password_hash,role,name,tenant_id,email,must_change) VALUES(?,?,'tenant',?,?,?,0)",[$username,password_hash($password,PASSWORD_DEFAULT),$name,$id,$email]);
             audit('Tenant self-registered','tenants',$id);
             db()->commit(); unset($_SESSION['signup_values']); $_SESSION['registered_username']=$username;
             flash('Your tenant account is ready. Sign in using your username and password. The dormitory will assign your room and bed.'); redirect('login');
         }
         if ($action==='login') {
-            $identity=hash('sha256',strtolower(trim($_POST['username']??'')).'|'.($_SERVER['REMOTE_ADDR']??'local'));
+            $identityValue=trim((string)($_POST['username']??''));
+            $identity=hash('sha256',strtolower($identityValue).'|'.($_SERVER['REMOTE_ADDR']??'local'));
             query('DELETE FROM login_attempts WHERE attempted_at < ?',[time()-900]);
             if ((int)query('SELECT COUNT(*) FROM login_attempts WHERE identity=?',[$identity])->fetchColumn()>=8) throw new RuntimeException('Too many attempts. Try again in 15 minutes.');
-            $u=one('SELECT * FROM users WHERE username=? AND role=? AND active=1',[trim($_POST['username']??''),$_POST['role']??'']);
+            $u=one('SELECT * FROM users WHERE username=? AND active=1',[$identityValue]);
+            if(!$u && filter_var($identityValue,FILTER_VALIDATE_EMAIL)) $u=one("SELECT * FROM users WHERE role='admin' AND email=? AND active=1",[$identityValue]);
             if (!$u || !password_verify($_POST['password']??'',$u['password_hash'])) {
                 query('INSERT INTO login_attempts(identity,attempted_at) VALUES(?,?)',[$identity,time()]);
-                throw new RuntimeException('The username, password, or selected role is incorrect.');
+                throw new RuntimeException('The username or password is incorrect.');
+            }
+            query('DELETE FROM login_attempts WHERE identity=?',[$identity]);
+            if($u['role']==='admin') {
+                admin_two_factor_encryption_ready();
+                admin_two_factor_start($u,admin_two_factor_record((int)$u['id'])?'verify':'setup');
             }
             session_regenerate_id(true); $_SESSION['uid']=$u['id']; $_SESSION['csrf']=bin2hex(random_bytes(32));
-            query('DELETE FROM login_attempts WHERE identity=?',[$identity]); audit('Logged in');
+            audit('Logged in');
             redirect($u['must_change']?'account':'dashboard');
+        }
+        $sessionUser=user();
+        if($sessionUser && $sessionUser['role']==='admin' && !admin_two_factor_verified($sessionUser)) {
+            $_SESSION=[]; session_regenerate_id(true); $_SESSION['csrf']=bin2hex(random_bytes(32));
+            flash('Please sign in again and complete two-factor verification.','error');
+            redirect('login');
         }
         $u=require_role(['admin','staff','tenant']);
         if ($action==='logout') { audit('Logged out'); $_SESSION=[]; session_regenerate_id(true); redirect('login'); }
@@ -71,27 +94,74 @@ function handle_action(): void {
             if(strlen($pw)<10 || strlen($pw)>72 || $pw!==($_POST['confirm_password']??'') || password_verify($pw,$u['password_hash'])) throw new RuntimeException('Use a different password of at least 10 and at most 72 bytes and confirm it correctly.');
             query('UPDATE users SET password_hash=?,must_change=0 WHERE id=?',[password_hash($pw,PASSWORD_DEFAULT),$u['id']]); audit('Changed own password'); break;
         case 'room':
-            require_role(['admin']); required('fixed_electricity');required('fixed_water');$capacity=(int)required('capacity');
+            require_role(['admin']); $capacity=(int)required('capacity');
             if($capacity<1||$capacity>30) throw new RuntimeException('Room capacity must be between 1 and 30.');
-            query('INSERT INTO rooms(number,capacity,rent,fixed_electricity,fixed_water) VALUES(?,?,?,?,?)',[required('number'),$capacity,cents('rent'),cents('fixed_electricity'),cents('fixed_water')]); $id=(int)db()->lastInsertId();
+            $hasElectricity=array_key_exists('fixed_electricity',$_POST);$hasWater=array_key_exists('fixed_water',$_POST);
+            if($hasElectricity!==$hasWater) throw new RuntimeException('Enter both legacy utility values or neither.');
+            if($hasElectricity) query('INSERT INTO rooms(number,capacity,rent,fixed_electricity,fixed_water) VALUES(?,?,?,?,?)',[required('number'),$capacity,cents('rent'),cents('fixed_electricity'),cents('fixed_water')]);
+            else query('INSERT INTO rooms(number,capacity,rent) VALUES(?,?,?)',[required('number'),$capacity,cents('rent')]);
+            $id=(int)db()->lastInsertId();
             for($i=1;$i<=$capacity;$i++) query('INSERT INTO bed_spaces(room_id,label) VALUES(?,?)',[$id,'Bed '.$i]); audit('Created room','rooms',$id); break;
         case 'room_update':
-            require_role(['admin']); required('fixed_electricity');required('fixed_water');$id=(int)required('room_id'); $st=required('status');
+            require_role(['admin']); $id=(int)required('room_id'); $st=required('status');$room=one('SELECT number,capacity FROM rooms WHERE id=?',[$id]);
+            if(!$room) throw new RuntimeException('Room not found.');
+            $number=trim((string)($_POST['number']??$room['number']));
+            if(strlen($number)>50) throw new RuntimeException('Room name must be 50 characters or fewer.');
             if(!in_array($st,['active','maintenance'],true)) throw new RuntimeException('Invalid room status.');
             if($st==='maintenance' && one('SELECT a.id FROM tenant_assignments a JOIN bed_spaces b ON b.id=a.bed_id WHERE b.room_id=? AND a.end_date IS NULL',[$id])) throw new RuntimeException('Transfer active tenants before marking this room for maintenance.');
-            if(!one('SELECT id FROM rooms WHERE id=?',[$id])) throw new RuntimeException('Room not found.');
-            $old=one('SELECT rent,fixed_electricity,fixed_water,status FROM rooms WHERE id=?',[$id]);
-            query('UPDATE rooms SET rent=?,status=?,fixed_electricity=?,fixed_water=? WHERE id=?',[cents('rent'),$st,cents('fixed_electricity'),cents('fixed_water'),$id]); audit('Updated room and fixed utility rates','rooms',$id,json_encode(['before'=>$old,'after'=>['rent'=>cents('rent'),'status'=>$st,'fixed_electricity'=>cents('fixed_electricity'),'fixed_water'=>cents('fixed_water')],'effect'=>'Future unfrozen billing periods only'])); break;
+            if(one('SELECT id FROM rooms WHERE number=? AND id<>?',[$number,$id])) throw new RuntimeException('That room name is already in use.');
+            $capacity=filter_var($_POST['capacity']??$room['capacity'],FILTER_VALIDATE_INT);
+            if($capacity===false||$capacity<1||$capacity>30) throw new RuntimeException('Bed capacity must be between 1 and 30.');
+            $bedCount=(int)query('SELECT COUNT(*) FROM bed_spaces WHERE room_id=?',[$id])->fetchColumn();
+            $occupied=(int)query('SELECT COUNT(DISTINCT b.id) FROM bed_spaces b JOIN tenant_assignments a ON a.bed_id=b.id WHERE b.room_id=? AND a.end_date IS NULL',[$id])->fetchColumn();
+            if($capacity<$occupied) throw new RuntimeException('Bed capacity cannot be lower than the number of occupied beds.');
+            $bedsToRemove=[];
+            if($capacity<$bedCount) {
+                $removeCount=$bedCount-$capacity;
+                foreach(rows('SELECT b.id FROM bed_spaces b WHERE b.room_id=? AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id) ORDER BY b.id DESC',[$id]) as $candidate) {
+                    $bedsToRemove[]=(int)$candidate['id'];
+                    if(count($bedsToRemove)===$removeCount) break;
+                }
+                if(count($bedsToRemove)<$removeCount) throw new RuntimeException('Cannot remove beds with assignment history. Reduce capacity only by unused beds.');
+            }
+            $hasElectricity=array_key_exists('fixed_electricity',$_POST);$hasWater=array_key_exists('fixed_water',$_POST);
+            if($hasElectricity!==$hasWater) throw new RuntimeException('Enter both legacy utility values or neither.');
+            $old=one('SELECT number,capacity,rent,status'.($hasElectricity?',fixed_electricity,fixed_water':'').' FROM rooms WHERE id=?',[$id]);
+            if($bedsToRemove) foreach($bedsToRemove as $bedId) query('DELETE FROM bed_spaces WHERE id=? AND room_id=?',[$bedId,$id]);
+            if($capacity>$bedCount) {
+                $nextLabel=1;
+                foreach(rows("SELECT label FROM bed_spaces WHERE room_id=?",[$id]) as $existingBed) if(preg_match('/^Bed ([1-9][0-9]*)$/',$existingBed['label'],$match)) $nextLabel=max($nextLabel,(int)$match[1]+1);
+                for($i=0;$i<$capacity-$bedCount;$i++) query('INSERT INTO bed_spaces(room_id,label) VALUES(?,?)',[$id,'Bed '.($nextLabel+$i)]);
+            }
+            if($hasElectricity) {
+                query('UPDATE rooms SET number=?,capacity=?,rent=?,status=?,fixed_electricity=?,fixed_water=? WHERE id=?',[$number,$capacity,cents('rent'),$st,cents('fixed_electricity'),cents('fixed_water'),$id]);
+                $after=['number'=>$number,'capacity'=>$capacity,'rent'=>cents('rent'),'status'=>$st,'fixed_electricity'=>cents('fixed_electricity'),'fixed_water'=>cents('fixed_water')];
+            } else {
+                query('UPDATE rooms SET number=?,capacity=?,rent=?,status=? WHERE id=?',[$number,$capacity,cents('rent'),$st,$id]);
+                $after=['number'=>$number,'capacity'=>$capacity,'rent'=>cents('rent'),'status'=>$st];
+            }
+            audit('Updated room settings','rooms',$id,json_encode(['before'=>$old,'after'=>$after])); break;
+        case 'room_delete':
+            require_role(['admin']); $id=(int)required('room_id');
+            $room=one('SELECT number FROM rooms WHERE id=? FOR UPDATE',[$id]);
+            if(!$room) throw new RuntimeException('Room not found.');
+            if(one('SELECT a.id FROM tenant_assignments a JOIN bed_spaces b ON b.id=a.bed_id WHERE b.room_id=?',[$id])) throw new RuntimeException('This room cannot be removed because it has tenant assignment history.');
+            if(one('SELECT id FROM occupancy_scans WHERE room_id=?',[$id]) || one('SELECT id FROM maintenance_requests WHERE room_id=?',[$id])) throw new RuntimeException('This room cannot be removed because it has linked occupancy or maintenance records.');
+            query('DELETE FROM bed_spaces WHERE room_id=?',[$id]);
+            query('DELETE FROM rooms WHERE id=?',[$id]);
+            audit('Removed unused room','rooms',$id,'Room '.$room['number'].' had no tenant assignment history or linked records.'); break;
         case 'tenant':
-            require_role(['admin']); $email=required('email');
-            if(!filter_var($email,FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid email address.');
+            require_role(['admin']); $email=account_email(required('email'));
             [$username,$password]=tenant_credentials();
+            $room=(int)required('room_id');
             $bed=(int)required('bed_id');
-            if(!one("SELECT b.id FROM bed_spaces b JOIN rooms r ON r.id=b.room_id WHERE b.id=? AND r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id AND a.end_date IS NULL)",[$bed])) throw new RuntimeException('This bed is no longer available.');
+            if(!one('SELECT id FROM rooms WHERE id=? AND status=\'active\' FOR UPDATE',[$room])) throw new RuntimeException('Selected room is no longer active.');
+            if(!one("SELECT b.id FROM bed_spaces b WHERE b.id=? AND b.room_id=? AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id AND a.end_date IS NULL)",[$bed,$room])) throw new RuntimeException('This bed is no longer available in the selected room.');
             $date=date_input('move_in'); if($date>date('Y-m-d')) throw new RuntimeException('Move-in cannot be in the future.');
             query('INSERT INTO tenants(name,email,contact,move_in) VALUES(?,?,?,?)',[required('name'),$email,required('contact'),$date]); $id=(int)db()->lastInsertId();
-            query('INSERT INTO tenant_assignments(tenant_id,bed_id,start_date) VALUES(?,?,?)',[$id,$bed,$date]);
-            query('INSERT INTO users(username,password_hash,role,name,tenant_id) VALUES(?,?,?,?,?)',[$username,password_hash($password,PASSWORD_DEFAULT),'tenant',required('name'),$id]);
+            try { query('INSERT INTO tenant_assignments(tenant_id,bed_id,start_date) VALUES(?,?,?)',[$id,$bed,$date]); }
+            catch(PDOException $error) { if(($error->errorInfo[1]??0)===1062) throw new RuntimeException('This bed was just assigned to another tenant. Choose an available bed.'); throw $error; }
+            query('INSERT INTO users(username,password_hash,role,name,tenant_id,email) VALUES(?,?,?,?,?,?)',[$username,password_hash($password,PASSWORD_DEFAULT),'tenant',required('name'),$id,$email]);
             audit('Registered tenant, created individual account, and assigned bed','tenants',$id);
             $_SESSION['action_message']='Tenant registered and account created. Username: '.$username.'. Share the temporary password privately; the tenant must change it on first login.'; break;
         case 'tenant_account':
@@ -100,26 +170,32 @@ function handle_action(): void {
             if(!$tenant) throw new RuntimeException('Choose an active tenant to create an account.');
             if(one('SELECT id FROM users WHERE tenant_id=?',[$id])) throw new RuntimeException('This tenant already has an account. Use password reset or enable access instead.');
             [$username,$password]=tenant_credentials();
-            query("INSERT INTO users(username,password_hash,role,name,tenant_id) VALUES(?,?,'tenant',?,?)",[$username,password_hash($password,PASSWORD_DEFAULT),$tenant['name'],$id]);
+            $email=account_email($tenant['email']);
+            query("INSERT INTO users(username,password_hash,role,name,tenant_id,email) VALUES(?,?,'tenant',?,?,?)",[$username,password_hash($password,PASSWORD_DEFAULT),$tenant['name'],$id,$email]);
             audit('Created account for existing tenant','users',(int)db()->lastInsertId(),'Linked tenant #'.$id);
             $_SESSION['action_message']='Tenant account created. Username: '.$username.'. The tenant must change the temporary password on first login.'; break;
         case 'tenant_update':
             require_role(['admin']); $id=(int)required('tenant_id'); $email=required('email');
-            if(!filter_var($email,FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid email.');
+            $account=one('SELECT id FROM users WHERE tenant_id=?',[$id]);
+            $email=account_email($email,$account?(int)$account['id']:null);
             query('UPDATE tenants SET name=?,email=?,contact=? WHERE id=?',[required('name'),$email,required('contact'),$id]);
-            query('UPDATE users SET name=? WHERE tenant_id=?',[required('name'),$id]); audit('Updated tenant details','tenants',$id); break;
+            query('UPDATE users SET name=?,email=? WHERE tenant_id=?',[required('name'),$email,$id]); audit('Updated tenant details','tenants',$id); break;
         case 'transfer':
             require_role(['admin']); $id=(int)required('tenant_id'); $a=one('SELECT * FROM tenant_assignments WHERE tenant_id=? AND end_date IS NULL',[$id]);
             if(!$a) throw new RuntimeException('No active assignment.');
             $date=date_input('transfer_date'); if($date<$a['start_date']||$date>date('Y-m-d')) throw new RuntimeException('Transfer date must be within the active stay.');
-            $bed=(int)required('bed_id'); if(!one("SELECT b.id FROM bed_spaces b JOIN rooms r ON r.id=b.room_id WHERE b.id=? AND r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id AND a.end_date IS NULL)",[$bed])) throw new RuntimeException('Selected bed is unavailable.');
+            $bed=(int)required('bed_id');
+            if(!one("SELECT b.id FROM bed_spaces b JOIN rooms r ON r.id=b.room_id WHERE b.id=? AND r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id AND a.end_date IS NULL)",[$bed])) throw new RuntimeException('Selected bed is unavailable.');
             query('UPDATE tenant_assignments SET end_date=? WHERE id=?',[$date,$a['id']]);
             query('INSERT INTO tenant_assignments(tenant_id,bed_id,start_date) VALUES(?,?,?)',[$id,$bed,$date]); audit('Transferred tenant','tenants',$id); break;
         case 'assign_tenant':
             require_role(['admin']); $id=(int)required('tenant_id'); $bed=(int)required('bed_id'); $date=date_input('move_in');
             if(!one("SELECT id FROM tenants WHERE id=? AND status='active'",[$id]) || one('SELECT id FROM tenant_assignments WHERE tenant_id=? AND end_date IS NULL',[$id])) throw new RuntimeException('Choose an active tenant without a bed assignment.');
             if($date>date('Y-m-d')) throw new RuntimeException('Move-in cannot be in the future.');
-            if(!one("SELECT b.id FROM bed_spaces b JOIN rooms r ON r.id=b.room_id WHERE b.id=? AND r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id AND a.end_date IS NULL)",[$bed])) throw new RuntimeException('This bed is no longer available.');
+            $room=(int)($_POST['room_id']??0);
+            $availableBed=one("SELECT b.id,b.room_id FROM bed_spaces b JOIN rooms r ON r.id=b.room_id WHERE b.id=? AND r.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_assignments a WHERE a.bed_id=b.id AND a.end_date IS NULL)",[$bed]);
+            if(!$availableBed) throw new RuntimeException('This bed is no longer available.');
+            if($room && (int)$availableBed['room_id']!==$room) throw new RuntimeException('Choose an available bed from the selected room.');
             query('INSERT INTO tenant_assignments(tenant_id,bed_id,start_date) VALUES(?,?,?)',[$id,$bed,$date]);
             query('UPDATE tenants SET move_in=? WHERE id=?',[$date,$id]); audit('Assigned room to registered tenant','tenants',$id); break;
         case 'moveout':
@@ -163,15 +239,27 @@ function handle_action(): void {
             $date=date_input('refunded_date'); $t=one('SELECT move_out FROM tenants WHERE id=?',[$d['tenant_id']]);
             if($date<$t['move_out']||$date>date('Y-m-d')) throw new RuntimeException('Refund date must fall between move-out and today.');
             query('UPDATE deposits SET refund_amount=?,deduction_reason=?,refunded_date=? WHERE id=?',[$amt,required('deduction_reason'),$date,$id]); audit('Settled security deposit','deposits',$id,required('deduction_reason')); break;
-        case 'scan':
-            require_role(['admin']); $id=(int)required('room_id'); $r=one('SELECT * FROM rooms WHERE id=?',[$id]); $count=filter_var($_POST['detected_count']??null,FILTER_VALIDATE_INT);
-            if(!$r || $count===false || $count<0 || $count>100) throw new RuntimeException('Invalid room or occupancy count.');
-            $source=required('source'); if(!in_array($source,['camera','manual'],true)) throw new RuntimeException('Invalid scan source.');
-            $registered=(int)query('SELECT COUNT(*) FROM tenant_assignments a JOIN bed_spaces b ON b.id=a.bed_id WHERE b.room_id=? AND a.end_date IS NULL',[$id])->fetchColumn();
-            query('INSERT INTO occupancy_scans(room_id,detected_count,registered_count,capacity,source,notes,scanned_by) VALUES(?,?,?,?,?,?,?)',[$id,$count,$registered,$r['capacity'],$source,trim($_POST['notes']??''),$u['id']]); audit('Recorded occupancy count','occupancy_scans',(int)db()->lastInsertId()); break;
         case 'staff':
             require_role(['admin']); $pw=required('temporary_password'); if(strlen($pw)<10 || strlen($pw)>72) throw new RuntimeException('Password must have at least 10 and at most 72 bytes.');
-            query("INSERT INTO users(username,password_hash,role,name) VALUES(?,?,'staff',?)",[required('username'),password_hash($pw,PASSWORD_DEFAULT),required('name')]); audit('Created staff account','users',(int)db()->lastInsertId()); break;
+            $username=required('username'); if(!preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{2,49}$/',$username) || one('SELECT id FROM users WHERE username=?',[$username])) throw new RuntimeException('Enter a valid, unused username.');
+            $email=account_email(required('email')); $role=(string)($_POST['role']??'staff');
+            if(!in_array($role,['admin','staff'],true)) throw new RuntimeException('Choose a Landlady or Staff account role.');
+            query('INSERT INTO users(username,password_hash,role,name,email) VALUES(?,?,?,?,?)',[$username,password_hash($pw,PASSWORD_DEFAULT),$role,required('name'),$email]); audit('Created '.$role.' account','users',(int)db()->lastInsertId()); break;
+        case 'account_email':
+            require_role(['admin']); $id=(int)required('user_id'); $account=one('SELECT id,role,tenant_id FROM users WHERE id=?',[$id]);
+            if(!$account) throw new RuntimeException('Account not found.');
+            $email=account_email(required('email'),$id);
+            query('UPDATE users SET email=? WHERE id=?',[$email,$id]);
+            if($account['role']==='tenant') query('UPDATE tenants SET email=? WHERE id=?',[$email,$account['tenant_id']]);
+            audit('Updated account email','users',$id); break;
+        case 'account_username':
+            require_role(['admin']); $id=(int)required('user_id');
+            if(!one('SELECT id FROM users WHERE id=?',[$id])) throw new RuntimeException('Account not found.');
+            $username=trim(required('username'));
+            if(!preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{2,49}$/',$username)) throw new RuntimeException('Username must be 3–50 characters using letters, numbers, dots, underscores, or hyphens.');
+            if(one('SELECT id FROM users WHERE username=? AND id<>?',[$username,$id])) throw new RuntimeException('That username is already taken. Choose another username.');
+            query('UPDATE users SET username=? WHERE id=?',[$username,$id]);
+            audit('Updated account username','users',$id); break;
         case 'toggle_user':
             require_role(['admin']); $id=(int)required('user_id'); if($id===$u['id']) throw new RuntimeException('You cannot disable your own account.');
             query('UPDATE users SET active=1-active WHERE id=?',[$id]); audit('Changed account access','users',$id); break;
