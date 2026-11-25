@@ -10,7 +10,12 @@ const ADMIN_2FA_MAX_ATTEMPTS = 5;
 
 function admin_two_factor_key(): string {
     $encoded=getenv('DORMITORY_TOTP_ENCRYPTION_KEY');
-    $key=is_string($encoded)?base64_decode($encoded,true):false;
+    // Fallback: read from config.local.env file if env var is not set
+    if($encoded===false || $encoded==='') {
+        $envFile=dirname(__DIR__).'/config.local.env';
+        if(is_file($envFile)) $encoded=trim((string)file_get_contents($envFile));
+    }
+    $key=is_string($encoded)&&$encoded!==''?base64_decode($encoded,true):false;
     if($key===false || strlen($key)!==32) throw new RuntimeException('Two-factor security is not configured. Contact the system administrator.');
     return $key;
 }

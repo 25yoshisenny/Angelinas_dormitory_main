@@ -1,17 +1,31 @@
 $projectDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $projectDirectory
+
+# 1) Already set in the calling environment — use as-is
+
+# 2) Try a local env file (config.local.env) that persists the key across runs
+$localEnvFile = Join-Path $projectDirectory 'config.local.env'
 if ([string]::IsNullOrWhiteSpace($env:DORMITORY_TOTP_ENCRYPTION_KEY)) {
-    $apacheConfigPath = 'C:\xampp\apache\conf\httpd.conf'
-    if (-not (Test-Path -LiteralPath $apacheConfigPath)) {
-        throw 'DORMITORY_TOTP_ENCRYPTION_KEY is missing and the XAMPP Apache config was not found.'
+    if (Test-Path -LiteralPath $localEnvFile) {
+        $savedKey = (Get-Content -LiteralPath $localEnvFile -Raw).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($savedKey)) {
+            $env:DORMITORY_TOTP_ENCRYPTION_KEY = $savedKey
+            Write-Host 'TOTP key loaded from config.local.env'
+        }
     }
-    $apacheConfig = Get-Content -LiteralPath $apacheConfigPath -Raw
-    $keySetting = [regex]::Match($apacheConfig, '(?m)^\s*SetEnv\s+DORMITORY_TOTP_ENCRYPTION_KEY\s+"([A-Za-z0-9+/]{43}=)"\s*$')
-    if (-not $keySetting.Success) {
-        throw 'Configure DORMITORY_TOTP_ENCRYPTION_KEY in the XAMPP Apache config before starting the system.'
-    }
-    $env:DORMITORY_TOTP_ENCRYPTION_KEY = $keySetting.Groups[1].Value
 }
+
+# 3) Auto-generate a brand-new key and save it (first-time setup)
+if ([string]::IsNullOrWhiteSpace($env:DORMITORY_TOTP_ENCRYPTION_KEY)) {
+    $randomBytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($randomBytes)
+    $newKey = [Convert]::ToBase64String($randomBytes)
+    $env:DORMITORY_TOTP_ENCRYPTION_KEY = $newKey
+    Set-Content -LiteralPath $localEnvFile -Value $newKey -NoNewline
+    Write-Host "New TOTP encryption key generated and saved to config.local.env"
+    Write-Host "BACKUP THIS KEY: $newKey"
+}
+
 try {
     $keyBytes = [Convert]::FromBase64String($env:DORMITORY_TOTP_ENCRYPTION_KEY)
 } catch {

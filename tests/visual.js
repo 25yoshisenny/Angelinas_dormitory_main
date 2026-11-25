@@ -31,7 +31,7 @@ async function main(){
   await send('Page.enable');await send('Runtime.enable');await send('Network.clearBrowserCookies');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1050,deviceScaleFactor:1,mobile:false});
   await navigate('');await waitFor("document.querySelector('.site-hero')!==null");await waitFor("document.querySelector('.about-dorm-image')?.complete && document.querySelector('.about-dorm-image').naturalWidth>0");
   if(!(await evaluate("getComputedStyle(document.querySelector('.sidebar')||document.body).fontFamily.includes('Inter')")))throw new Error('Expected the unified Inter font.');
-  if(!(await evaluate("document.querySelectorAll('[data-pill-nav-link]').length===4 && document.querySelector('[data-pill-nav-link][aria-current=page] .pill-nav__face')?.textContent.trim()==='Home'")))throw new Error('Pill navigation should expose all links and mark the current section.');
+  if(!(await evaluate("document.querySelectorAll('[data-pill-nav-link]').length===5 && document.querySelector('[data-pill-nav-link][aria-current=page] .pill-nav__face')?.textContent.trim()==='Home'")))throw new Error('Pill navigation should expose all links and mark the current section.');
   await screenshot('landing-desktop');
   const homePoint=await evaluate("const r=document.querySelector('[data-pill-nav-link][href$=\"#home\"]').getBoundingClientRect();({x:r.left+r.width/2,y:r.top+r.height/2})");
   await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:homePoint.x,y:homePoint.y});await evaluate("new Promise(resolve=>setTimeout(resolve,650))");

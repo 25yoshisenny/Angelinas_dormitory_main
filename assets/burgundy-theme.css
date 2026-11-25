@@ -218,6 +218,11 @@ textarea:focus-visible {
   background: linear-gradient(180deg, #191211 0%, #14100f 100%);
   border-right: 1px solid var(--border);
   box-shadow: 6px 0 24px rgb(0 0 0 / 26%);
+  scrollbar-width: none;
+}
+
+.sidebar::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar .brand,
@@ -822,10 +827,23 @@ select option {
 .section-tabs {
   background: #1c1817;
   border: 1px solid var(--border);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+}
+
+.section-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .section-tabs a {
   color: #b6a5a1;
+  flex: 0 0 auto;
+  white-space: nowrap;
   transition: background .18s var(--ease-soft), color .18s var(--ease-soft), box-shadow .22s var(--ease-soft);
 }
 
@@ -1610,6 +1628,15 @@ select option {
 }
 
 .dorm-gallery-grid {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x proximity;
+  margin-top: 28px;
+}
+
+.dorm-gallery-grid.is-carousel {
   position: relative;
   display: block;
   height: clamp(350px, 38vw, 460px);
@@ -1617,15 +1644,16 @@ select option {
   perspective: 1100px;
   touch-action: pan-y;
   user-select: none;
-  margin-top: 28px;
+  padding-bottom: 0;
+  scroll-snap-type: none;
 }
 
 .dorm-gallery-item {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+  position: relative;
   display: flex;
+  flex: 0 0 clamp(220px, 28vw, 300px);
   flex-direction: column;
+  height: clamp(260px, 30vw, 340px);
   min-width: 0;
   margin: 0;
   overflow: hidden;
@@ -1634,10 +1662,20 @@ select option {
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow-card);
+  scroll-snap-align: start;
+  transition: border-color .2s var(--ease-soft), box-shadow .2s var(--ease-soft), filter .2s ease;
+}
+
+.dorm-gallery-grid.is-carousel .dorm-gallery-item {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  flex: none;
+  height: auto;
+  scroll-snap-align: none;
   transform-style: preserve-3d;
   backface-visibility: hidden;
   will-change: transform, opacity;
-  transition: border-color .2s var(--ease-soft), box-shadow .2s var(--ease-soft), filter .2s ease;
 }
 
 .dorm-gallery-item:hover {
@@ -1898,7 +1936,7 @@ select option {
 }
 
 @media (max-width: 760px) {
-  .dorm-gallery-grid {
+  .dorm-gallery-grid.is-carousel {
     height: clamp(340px, 90vw, 430px);
   }
 
@@ -1909,7 +1947,7 @@ select option {
     padding: 36px 0;
   }
 
-  .dorm-gallery-grid {
+  .dorm-gallery-grid.is-carousel {
     height: clamp(330px, 94vw, 400px);
   }
 

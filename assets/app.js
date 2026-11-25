@@ -167,8 +167,17 @@ if(batch){
   }
  };
  all.addEventListener('change',()=>{batch.querySelectorAll('[name="selected[]"]:not(:disabled)').forEach(box=>box.checked=all.checked);updateTotals();});
+ const syncBillingDates=()=>{
+  const [year,month]=period.value.split('-').map(Number);
+  if(!year||!month)return;
+  const lastDay=new Date(year,month,0).getDate();
+  batch.querySelectorAll('[data-billing-date]').forEach(input=>{
+   const day=Math.min(Math.max(Number(input.dataset.defaultDay||1),1),lastDay);
+   input.value=period.value+'-'+String(day).padStart(2,'0');
+  });
+ };
  roomSelect.addEventListener('change',()=>{utilityTotalsEdited=false;updatePreview();});
- period.addEventListener('change',()=>{utilityTotalsEdited=false;updatePreview();});
+ period.addEventListener('change',()=>{utilityTotalsEdited=false;syncBillingDates();updatePreview();});
  utilitiesInput.addEventListener('input',()=>{utilityTotalsEdited=true;updatePreview();});
  discountInput.addEventListener('input',updateTotals);
  batch.addEventListener('change',event=>{if(event.target.name==='selected[]')updateTotals();});
@@ -189,6 +198,7 @@ if(dormGallery){
  const galleryItems=Array.from(dormGallery.querySelectorAll('.dorm-gallery-item'));
  const galleryTrack=dormGallery.querySelector('.dorm-gallery-grid');
  const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+ galleryTrack.classList.add('is-carousel');
  let position=0,target=0,cardSpacing=1,trackWidth=0,trackHeight=0,animationFrame=0,snapTimer=0,drag=null,ignoreClickUntil=0;
  const wrapDistance=(value,length)=>((value+length/2)%length+length)%length-length/2;
  const updateTrackSize=()=>{

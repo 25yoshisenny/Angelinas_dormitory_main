@@ -48,8 +48,8 @@ function batch_view(): void {
     foreach($rooms as $room) echo '<option value="'.e($room['id']).'" '.((int)$room['id']===$selectedRoom?'selected':'').'>Room '.e($room['number']).'</option>';
     echo '</select></label>';
     field('Billing month','period','month',$period,true,'data-billing-period data-batch-period');
-    field('Cutoff date','cutoff','date',billing_date($period,'cutoff_day'));
-    field('Due date','due_date','date',billing_date($period,'due_day'));
+    field('Cutoff date','cutoff','date',billing_date($period,'cutoff_day'),true,'data-billing-date="cutoff" data-default-day="'.e(setting('cutoff_day','15')).'"');
+    field('Due date','due_date','date',billing_date($period,'due_day'),true,'data-billing-date="due" data-default-day="'.e(setting('due_day','28')).'"');
     amount_field('Room utilities total (electricity + water, PHP)','room_utilities',0);
     amount_field('Discount per tenant (PHP)','discount',0);
     field('Discount reason','discount_reason','text','',false,'maxlength="500"');

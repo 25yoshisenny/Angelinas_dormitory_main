@@ -6,7 +6,7 @@ A PHP 8.2 application built from `Angelinas_Dormitory_Complete_System_Flow_and_D
 
 Start **Apache** and **MySQL** in the XAMPP Control Panel, then open **http://localhost/Angelina-s_dormitory/**. This is the XAMPP Apache site on port 80.
 
-Alternatively, with XAMPP MySQL and Apache configured, run `powershell -ExecutionPolicy Bypass -File .\start.ps1` in this folder and open **http://localhost:8080/**. Keep the terminal running while using the system; this server starts only when you run the script. It reads the TOTP key from the XAMPP Apache configuration unless `DORMITORY_TOTP_ENCRYPTION_KEY` is already set in the environment.
+Alternatively, with XAMPP MySQL and Apache configured, run `powershell -ExecutionPolicy Bypass -File .\start.ps1` in this folder and open **http://localhost:8080/**. Keep the terminal running while using the system; this server starts only when you run the script. It reads the TOTP key from the XAMPP Apache configuration or the `DORMITORY_TOTP_ENCRYPTION_KEY` environment variable. If neither is set, it securely prompts for the original key without displaying the input.
 
 Connection settings can be supplied through **config.database.php** or the `DORMITORY_DB_*` environment variables. Without overrides, this local XAMPP setup uses host `127.0.0.1`, port `3306`, database `angelinas_dormitory`, user `root`, and an empty password. View tables through **http://localhost/phpmyadmin/** when Apache is running.
 
