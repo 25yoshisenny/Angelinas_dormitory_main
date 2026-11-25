@@ -87,7 +87,7 @@ function admin_two_factor_uri(string $secret,array $u): string {
 }
 
 function admin_two_factor_qr(string $uri): string {
-    $options=new QROptions(['outputType'=>QROutputInterface::MARKUP_SVG,'scale'=>5]);
+    $options=new QROptions(['outputType'=>QROutputInterface::MARKUP_SVG,'outputBase64'=>false,'scale'=>5]);
     $svg=(new QRCode($options))->render($uri);
     return 'data:image/svg+xml;base64,'.base64_encode($svg);
 }

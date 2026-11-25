@@ -1792,6 +1792,14 @@ select option {
   border: 1px solid #4a3234;
 }
 
+.site-hero {
+  grid-template-columns: minmax(0, 680px);
+}
+
+.hero-copy {
+  max-width: 680px;
+}
+
 .software-preview,
 .preview-window,
 .preview-content,
