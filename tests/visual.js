@@ -76,7 +76,7 @@ async function main(){
   await waitFor("document.querySelector('[name=new_password]')!==null");
   await evaluate("document.querySelector('[name=current_password]').value='Admin@12345';document.querySelector('[name=new_password]').value='VisualTesting@2026';document.querySelector('[name=confirm_password]').value='VisualTesting@2026';document.querySelector('main form').requestSubmit();true");
   await waitFor("document.querySelector('.notice')?.textContent.includes('Saved successfully')");
-  await navigate('index.php?page=dashboard');await waitFor("document.querySelector('.welcome-banner')!==null");await screenshot('dashboard-desktop');
+  await navigate('index.php?page=dashboard');await waitFor("document.querySelector('.overview-welcome')!==null");await screenshot('dashboard-desktop');
   await navigate('index.php?page=batch');await evaluate("document.querySelector('.workspace-back').click();true");await waitFor("location.search==='?page=billing' && document.readyState==='complete'");
   await navigate('index.php?page=dashboard');
 

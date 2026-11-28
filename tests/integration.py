@@ -178,22 +178,22 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert 'incorrect' in pending_admin.post('verify_admin_otp','otp',code=totp_code(ADMIN_TOTP_SECRETS['admin'],-2))
         login_otp=totp_code(ADMIN_TOTP_SECRETS['admin'],1)
         before_otp_session=pending_admin.session_id()
-        assert 'welcome-banner' in pending_admin.post('verify_admin_otp','otp',code=login_otp)
+        assert 'Welcome back,' in pending_admin.post('verify_admin_otp','otp',code=login_otp)
         assert pending_admin.session_id()!=before_otp_session
         replay_admin=Client()
         assert 'Verify your sign-in' in replay_admin.post('login','login',username='admin',password='AdminTesting@2026')
         assert 'incorrect' in replay_admin.post('verify_admin_otp','otp',code=login_otp)
-        assert 'welcome-banner' in replay_admin.post('verify_admin_otp','otp',code=recovery_code)
+        assert 'Welcome back,' in replay_admin.post('verify_admin_otp','otp',code=recovery_code)
         assert con.execute('SELECT used_at FROM admin_two_factor_recovery WHERE user_id=(SELECT id FROM users WHERE username=?) AND code_hash=?',['admin',hashlib.sha256(recovery_code.replace('-','').lower().encode()).hexdigest()]).fetchone()[0] is not None
         recovery_replay=Client()
         assert 'Verify your sign-in' in recovery_replay.post('login','login',username='admin',password='AdminTesting@2026')
         assert 'incorrect' in recovery_replay.post('verify_admin_otp','otp',code=recovery_code)
         email_admin=Client()
         assert 'Verify your sign-in' in email_admin.post('login','login',username='admin@angelinasdormitory.test',password='AdminTesting@2026')
-        assert 'welcome-banner' in email_admin.post('verify_admin_otp','otp',code=recovery_codes[1])
+        assert 'Welcome back,' in email_admin.post('verify_admin_otp','otp',code=recovery_codes[1])
         logout_admin=Client()
         assert 'Verify your sign-in' in logout_admin.post('login','login',username='admin',password='AdminTesting@2026')
-        assert 'welcome-banner' in logout_admin.post('verify_admin_otp','otp',code=recovery_codes[4])
+        assert 'Welcome back,' in logout_admin.post('verify_admin_otp','otp',code=recovery_codes[4])
         logout_admin.post('logout','dashboard')
         assert 'Sign in to your account' in logout_admin.get('index.php?page=dashboard')[1]
         locked_admin=Client()
@@ -804,7 +804,7 @@ with tempfile.TemporaryDirectory(prefix='dormitory-test-',dir=ROOT/'storage') as
         assert con.execute('SELECT id,tenant_id,token,status,revoked_at FROM tenant_qr_codes ORDER BY id').fetchall()==qr_history
         disable_admin=Client()
         assert 'Verify your sign-in' in disable_admin.post('login','login',username='admin',password='AdminTesting@2026')
-        assert 'welcome-banner' in disable_admin.post('verify_admin_otp','otp',code=recovery_codes[2])
+        assert 'Welcome back,' in disable_admin.post('verify_admin_otp','otp',code=recovery_codes[2])
         disabled=disable_admin.post('disable_admin_2fa','security',code=recovery_codes[3])
         assert 'Two-factor authentication was disabled' in disabled
         assert con.execute('SELECT COUNT(*) FROM admin_two_factor WHERE user_id=?',[admin_id]).fetchone()[0]==0

@@ -1,5 +1,5 @@
 /* ============================================================================
-   Angelina's Dormitory — BURGUNDY theme
+   Angelina's Dormitory â€” BURGUNDY theme
    Elegant dark-red restyle: charcoal canvas, deep burgundy and crimson
    accents, restrained glow on primary actions and active navigation only.
    Loaded last so it wins over every earlier stylesheet.
@@ -65,6 +65,7 @@
 
   --ease-soft: cubic-bezier(.25, .6, .3, 1);
 }
+
 
 /* 2. Base canvas and typography ------------------------------------------- */
 body {
@@ -837,6 +838,17 @@ select option {
 }
 
 .section-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+html:has(.commercial-site),
+body:has(.commercial-site) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html:has(.commercial-site)::-webkit-scrollbar,
+body:has(.commercial-site)::-webkit-scrollbar {
   display: none;
 }
 
@@ -1687,7 +1699,7 @@ select option {
 .dorm-gallery-item img {
   display: block;
   width: 100%;
-  height: calc(100% - 58px);
+  height: 100%;
   object-fit: cover;
   transition: transform .35s var(--ease-soft);
 }
@@ -2465,29 +2477,21 @@ select option {
   --overview-negative: #e3816d;
 }
 
-.admin-overview .welcome-banner {
-  margin: 0;
-  background: #1a1717;
-  border-color: #302927;
-  box-shadow: none;
+.admin-overview .overview-welcome {
+  margin: 0 0 4px;
 }
 
-.admin-overview .welcome-banner .eyebrow {
-  color: var(--overview-gold);
-}
-
-.admin-overview .welcome-banner h2 {
+.admin-overview .overview-welcome h2 {
+  margin: 0 0 4px;
+  font-size: clamp(1.35rem, 2vw, 1.75rem);
+  font-weight: 700;
   color: #f5f0ed;
 }
 
-.admin-overview .welcome-banner p {
+.admin-overview .overview-welcome p {
+  margin: 0;
   color: #aa9d99;
-}
-
-.admin-overview .welcome-art {
-  background: #211d1b;
-  border-color: #342d26;
-  color: var(--overview-gold);
+  font-size: 0.92rem;
 }
 
 .overview-kpis,
@@ -2990,3 +2994,25 @@ a.overview-kpi:focus-visible {
     transition: none;
   }
 }
+
+
+/* Scroll reveal - fast */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .28s cubic-bezier(.2,.8,.2,1), transform .28s cubic-bezier(.2,.8,.2,1);
+  will-change: opacity, transform;
+}
+.scroll-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal,
+  .scroll-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+

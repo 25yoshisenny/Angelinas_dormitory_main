@@ -1,5 +1,5 @@
-const peso=value=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(value/100);
-document.querySelectorAll('[data-copy]').forEach(button=>button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(button.dataset.copy);button.textContent='Copied ✓';}catch{button.textContent='Number: '+button.dataset.copy;}}));
+﻿const peso=value=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(value/100);
+document.querySelectorAll('[data-copy]').forEach(button=>button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(button.dataset.copy);button.textContent='Copied âœ“';}catch{button.textContent='Number: '+button.dataset.copy;}}));
 document.querySelectorAll('[data-tenant-room]').forEach(roomSelect=>{
  const form=roomSelect.closest('form'),bedSelect=form?.querySelector('[data-tenant-bed]'),status=form?.querySelector('[data-tenant-bed-status]'),submitButton=form?.querySelector('.form-actions button');
  if(!bedSelect||!status)return;
@@ -7,7 +7,7 @@ document.querySelectorAll('[data-tenant-room]').forEach(roomSelect=>{
  const refreshBeds=async()=>{
   const currentRequest=++requestId,roomId=roomSelect.value;
   bedSelect.replaceChildren();bedSelect.disabled=true;if(submitButton)submitButton.disabled=true;
-  bedSelect.add(new Option('Loading available beds…',''));status.textContent='Checking room availability…';
+  bedSelect.add(new Option('Loading available bedsâ€¦',''));status.textContent='Checking room availabilityâ€¦';
   const url=new URL(window.location.href);url.search='';url.searchParams.set('tenant_beds','1');url.searchParams.set('room_id',roomId);
   try{
    const response=await fetch(url,{headers:{Accept:'application/json'},cache:'no-store'}),data=await response.json();
@@ -54,7 +54,7 @@ document.querySelectorAll('.table-wrap table:not(.batch-table)').forEach(table=>
  const previous=document.createElement('button');previous.type='button';previous.textContent='Previous';
  const next=document.createElement('button');next.type='button';next.textContent='Next';
  const pageLabel=document.createElement('span');pager.append(label,previous,pageLabel,next);table.parentNode.after(pager);
- const update=()=>{const matching=entries.filter(row=>row.textContent.toLowerCase().includes(term)&&(!filter||row.dataset.status===filter));page=Math.max(0,Math.min(page,Math.ceil(matching.length/pageSize)-1));entries.forEach(row=>row.hidden=true);matching.slice(page*pageSize,(page+1)*pageSize).forEach(row=>row.hidden=false);label.textContent=matching.length?(page*pageSize+1)+'–'+Math.min((page+1)*pageSize,matching.length)+' of '+matching.length+' records':'No matching records';pageLabel.textContent=(page+1)+' / '+Math.max(1,Math.ceil(matching.length/pageSize));previous.disabled=page===0;next.disabled=(page+1)*pageSize>=matching.length;};
+ const update=()=>{const matching=entries.filter(row=>row.textContent.toLowerCase().includes(term)&&(!filter||row.dataset.status===filter));page=Math.max(0,Math.min(page,Math.ceil(matching.length/pageSize)-1));entries.forEach(row=>row.hidden=true);matching.slice(page*pageSize,(page+1)*pageSize).forEach(row=>row.hidden=false);label.textContent=matching.length?(page*pageSize+1)+'â€“'+Math.min((page+1)*pageSize,matching.length)+' of '+matching.length+' records':'No matching records';pageLabel.textContent=(page+1)+' / '+Math.max(1,Math.ceil(matching.length/pageSize));previous.disabled=page===0;next.disabled=(page+1)*pageSize>=matching.length;};
  if(search){const toolbar=document.createElement('div');toolbar.className='table-toolbar';search.before(toolbar);toolbar.append(search);search.addEventListener('input',()=>{term=search.value.toLowerCase();page=0;update();});if(table.id==='bill-table'){const select=document.createElement('select');select.setAttribute('aria-label','Filter statement status');['All statuses','Unpaid','Partial','Paid','Overdue','Carried'].forEach((text,i)=>{const option=document.createElement('option');option.value=i?text.toLowerCase():'';option.textContent=text;select.append(option);});toolbar.append(select);select.addEventListener('change',()=>{filter=select.value;page=0;update();});}}
  previous.addEventListener('click',()=>{page--;update();});next.addEventListener('click',()=>{page++;update();});update();
 });
@@ -135,14 +135,14 @@ if(batch){
  const updatePreview=async()=>{
   const version=++requestId;ready=false;generate.disabled=true;all.checked=true;all.indeterminate=false;
   const previouslySelected=new Set(Array.from(batch.querySelectorAll('[name="selected[]"]:checked')).map(box=>box.value)),hadRows=rows.querySelector('[data-batch-row]')!==null;
-  status.textContent='Loading selected room and billing period…';
-  rows.replaceChildren();const loading=document.createElement('tr');const loadingCell=cell(loading,'Loading billing details…');loadingCell.colSpan=6;loadingCell.className='empty';rows.append(loading);
+  status.textContent='Loading selected room and billing periodâ€¦';
+  rows.replaceChildren();const loading=document.createElement('tr');const loadingCell=cell(loading,'Loading billing detailsâ€¦');loadingCell.colSpan=6;loadingCell.className='empty';rows.append(loading);
   const url=new URL(window.location.href);url.search='';url.searchParams.set('batch_preview','1');url.searchParams.set('room_id',roomSelect.value);url.searchParams.set('period',period.value);
   if(utilityTotalsEdited&&utilitiesInput.value!=='')url.searchParams.set('room_utilities',utilitiesInput.value);
   try{
    const response=await fetch(url,{headers:{Accept:'application/json'},cache:'no-store'}),data=await response.json();
    if(version!==requestId)return;
-   if(!response.ok)throw new Error(data.error||'Unable to load this room’s billing details.');
+   if(!response.ok)throw new Error(data.error||'Unable to load this roomâ€™s billing details.');
    if(!utilityTotalsEdited)utilitiesInput.value=(Number(data.room.utilities||0)/100).toFixed(2);
    utilitiesInput.readOnly=data.room.utility_locked;
    rows.replaceChildren();
@@ -157,13 +157,13 @@ if(batch){
     cell(row,peso(row.dataset.utilities));
     cell(row,peso(tenant.previous));const totalCell=document.createElement('td'),amount=document.createElement('strong');amount.dataset.batchTotal='';totalCell.append(amount);row.append(totalCell);rows.append(row);
    });
-   ready=true;status.textContent='Room '+data.room.number+' · '+data.tenants.length+' active tenant(s) · '+data.tenants.filter(tenant=>tenant.eligible).length+' eligible for '+data.period+'.';
+   ready=true;status.textContent='Room '+data.room.number+' Â· '+data.tenants.length+' active tenant(s) Â· '+data.tenants.filter(tenant=>tenant.eligible).length+' eligible for '+data.period+'.';
    if(data.room.utility_locked)status.textContent+=' Utility totals are locked because a statement already exists for this room and month.';
    if(data.tenants.length&&!data.tenants.some(tenant=>tenant.eligible))status.textContent+=' All tenants are already billed or otherwise ineligible for this period.';
    updateTotals();
   }catch(error){
    if(version!==requestId)return;
-   rows.replaceChildren();const failed=document.createElement('tr');const message=cell(failed,'Billing details could not be loaded: '+error.message);message.colSpan=6;message.className='empty';rows.append(failed);status.textContent='Unable to prepare billing. Correct the room or billing month and try again.';generate.disabled=true;roomTotal.textContent='—';selectedTotal.textContent='—';
+   rows.replaceChildren();const failed=document.createElement('tr');const message=cell(failed,'Billing details could not be loaded: '+error.message);message.colSpan=6;message.className='empty';rows.append(failed);status.textContent='Unable to prepare billing. Correct the room or billing month and try again.';generate.disabled=true;roomTotal.textContent='â€”';selectedTotal.textContent='â€”';
   }
  };
  all.addEventListener('change',()=>{batch.querySelectorAll('[name="selected[]"]:not(:disabled)').forEach(box=>box.checked=all.checked);updateTotals();});
@@ -288,8 +288,8 @@ if(dormGallery){
    const thumbnail=galleryItems[index].querySelector('img');
    layers[layerIndex].src=thumbnail.currentSrc||thumbnail.src;
    layers[layerIndex].alt=thumbnail.alt;
-   caption.textContent=galleryItems[index].querySelector('figcaption').textContent;
-   counter.textContent=(index+1)+' / '+galleryItems.length;
+   if(caption){const fig=galleryItems[index].querySelector('figcaption');caption.textContent=fig?fig.textContent:(thumbnail.alt||'');}
+   if(counter)counter.textContent=(index+1)+' / '+galleryItems.length;
   };
   const finishClose=()=>{
    if(closeTimer)window.clearTimeout(closeTimer);
@@ -377,3 +377,68 @@ if(dormGallery){
   });
  }
 }
+
+
+// Count-up animation for numbers
+(()=>{
+ const items=document.querySelectorAll('[data-countup]');
+ if(!items.length)return;
+ const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const fmt=(n,dec,prefix,suffix)=>{
+  const fixed=Number(n).toFixed(dec);
+  const parts=fixed.split('.');
+  parts[0]=parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  return prefix+parts.join(dec>0?'.':'')+(suffix||'');
+ };
+ const run=el=>{
+  const target=Number(el.dataset.countup||0);
+  const dec=Number(el.dataset.countupDecimals||0);
+  const prefix=el.dataset.countupPrefix||'';
+  const suffix=el.dataset.countupSuffix||'';
+  const final=el.textContent;
+  if(reduce||!Number.isFinite(target)){return;}
+  const dur=1200; const start=performance.now();
+  const step=now=>{
+   const t=Math.min(1,(now-start)/dur);
+   const ease=1-Math.pow(1-t,3);
+   el.textContent=fmt(target*ease,dec,prefix,suffix);
+   if(t<1)requestAnimationFrame(step); else el.textContent=final;
+  };
+  requestAnimationFrame(step);
+ };
+ const io='IntersectionObserver' in window ? new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){run(e.target);io.unobserve(e.target);}});
+ },{threshold:.2}) : null;
+ items.forEach(el=>{ if(io) io.observe(el); else run(el); });
+})();
+
+
+// Scroll reveal animations for workspace panels
+(()=>{
+ const workspace=document.querySelector('.workspace .content');
+ if(!workspace) return;
+ const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const targets=workspace.querySelectorAll('.panel, .stats > .stat, .overview-kpi, .overview-chart, .overview-transactions, .overview-secondary > *, .operation-summary > div, .qr-stat, .tenant-home-grid > *, .home-detail-grid > *, .dashboard-grid > *, .quick-links > *');
+ if(!targets.length) return;
+ targets.forEach((el,i)=>{
+  el.classList.add('scroll-reveal');
+  const delay=Math.min((i%6)*40,160);
+  if(delay) el.style.transitionDelay=delay+'ms';
+ });
+ if(reduce || !('IntersectionObserver' in window)){
+  targets.forEach(el=>el.classList.add('is-visible'));
+  return;
+ }
+ const io=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+   if(e.isIntersecting){
+    e.target.classList.add('is-visible');
+    io.unobserve(e.target);
+   }
+  });
+ },{threshold:.12, rootMargin:'0px 0px -40px 0px'});
+ targets.forEach(el=>io.observe(el));
+})();
+
+
+
